@@ -1,17 +1,20 @@
 """CLIAdapter contract.
 
-Slide 07 (Single Responsibility): the adapter contract is intentionally tiny.
-Two abstract methods: `build_command` and `parse_result`. Everything else
-(subprocess spawning, timing, git-changed-files helper) lives in the base class.
+Tiny by design: two abstract methods (``build_command`` and ``parse_result``).
+Everything else — subprocess spawning, streaming, timing, git-changed-files —
+lives in the base class so every concrete adapter inherits identical behavior.
 
-Concrete adapters declare `name: ClassVar[str]` and register via `@register_adapter`.
+Concrete adapters declare ``name: ClassVar[str]`` and register via
+``@register_adapter``.
 """
 
 import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Callable, ClassVar
+
+from coterie.core.streaming import run_streaming
 
 
 @dataclass
@@ -22,6 +25,9 @@ class AdapterResult:
     files_changed: list[str] = field(default_factory=list)
     duration_s: float = 0.0
     cost_estimate_usd: float | None = None
+
+
+OnOutput = Callable[[str], None]
 
 
 class CLIAdapter(ABC):
@@ -46,18 +52,31 @@ class CLIAdapter(ABC):
         *,
         timeout_s: int = 600,
         extra: dict | None = None,
+        on_output: OnOutput | None = None,
     ) -> AdapterResult:
         cmd = self.build_command(prompt, workdir, extra=extra or {})
         t0 = time.time()
-        proc = subprocess.run(
-            cmd,
-            cwd=workdir,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-        )
-        result = self.parse_result(proc.stdout, proc.stderr, proc.returncode)
+
+        if on_output is not None:
+            stream = run_streaming(
+                cmd,
+                cwd=workdir,
+                timeout_s=timeout_s,
+                on_output=on_output,
+            )
+            result = self.parse_result(stream.stdout, stream.stderr, stream.exit_code)
+            if stream.timed_out:
+                result.stderr = (result.stderr or "") + f"\n[coterie] timeout after {timeout_s}s"
+        else:
+            proc = subprocess.run(
+                cmd,
+                cwd=workdir,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+            )
+            result = self.parse_result(proc.stdout, proc.stderr, proc.returncode)
         result.duration_s = time.time() - t0
         return result
 

@@ -90,7 +90,11 @@ def test_full_stack_run_via_tui_client(server):
         )
         rid = summary["id"]
 
-        # Stream events to completion
+        # Stream events to completion. agent_output is ephemeral (not
+        # persisted), so we only see it if our subscriber attached before the
+        # run finished. The fake adapter is too fast to guarantee that race —
+        # so we assert what the structural events look like instead, and
+        # cover agent_output separately via the agent-runner unit test.
         kinds_seen: list[str] = []
         with client.stream_events(rid) as events:
             for ev in events:

@@ -1,7 +1,7 @@
 """In-process FakeAdapter for tests and offline demos.
 
-Slide 20 of the deck: protocol-typed deps make fakes trivial. The Fake never
-spawns a subprocess — it pops the next scripted `AdapterResult` from a queue.
+Protocol-typed deps make fakes trivial. The Fake never spawns a subprocess —
+it pops the next scripted ``AdapterResult`` from a queue.
 
 Usage:
 
@@ -62,6 +62,7 @@ class FakeAdapter(CLIAdapter):
         *,
         timeout_s: int = 600,
         extra: dict | None = None,
+        on_output=None,
     ) -> AdapterResult:
         self._invocations.setdefault(self.agent_id, []).append(
             {"prompt": prompt, "workdir": workdir}
@@ -72,4 +73,13 @@ class FakeAdapter(CLIAdapter):
                 f"FakeAdapter({self.agent_id!r}) has no scripted results remaining; "
                 f"prior invocations: {len(self._invocations.get(self.agent_id, []))}"
             )
-        return queue.popleft()
+        result = queue.popleft()
+        # If a subscriber is attached, mirror the scripted stdout to it in one
+        # chunk so downstream visualizers exercise the streaming path even in
+        # tests / mock benches.
+        if on_output is not None and result.stdout:
+            try:
+                on_output(result.stdout)
+            except Exception:  # noqa: BLE001
+                pass
+        return result

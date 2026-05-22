@@ -19,6 +19,13 @@ export interface LiveState {
   current_step_idx: number;
   /** When non-null, the runner is paused at an HIL checkpoint. */
   paused_at: string[] | null;
+  /**
+   * Live subprocess stdout chunks keyed by agent_id. The value is the running
+   * concatenation as the agent streams output. Cleared when the run completes.
+   */
+  agent_output: Record<string, string>;
+  /** agent_id of whichever agent emitted the most recent chunk, for header focus. */
+  last_active_agent: string | null;
 }
 
 export interface LiveEvent {
@@ -68,6 +75,18 @@ function reducer(s: Store, a: Action): Store {
       state = { ...state, ...snap, paused_at: next };
       break;
     }
+    case "agent_output": {
+      const agentId = typeof ev.data.agent_id === "string" ? ev.data.agent_id : "_";
+      const chunk = typeof ev.data.chunk === "string" ? ev.data.chunk : "";
+      if (!chunk) break;
+      const prev = state.agent_output[agentId] ?? "";
+      state = {
+        ...state,
+        agent_output: { ...state.agent_output, [agentId]: prev + chunk },
+        last_active_agent: agentId,
+      };
+      break;
+    }
     case "done": {
       const status = String(ev.data.status ?? "done");
       state = { ...state, status, paused_at: null };
@@ -93,6 +112,8 @@ function emptyState(seed?: ApiRunDetail): LiveState {
       plan: [],
       current_step_idx: 0,
       paused_at: null,
+      agent_output: {},
+      last_active_agent: null,
     };
   }
   const s = (seed.current_state ?? seed.final_state ?? {}) as Partial<LiveState>;
@@ -108,6 +129,8 @@ function emptyState(seed?: ApiRunDetail): LiveState {
     plan: (s.plan as string[]) ?? [],
     current_step_idx: (s.current_step_idx as number) ?? 0,
     paused_at: seed.summary.status === "awaiting_human" ? [] : null,
+    agent_output: {},
+    last_active_agent: null,
   };
 }
 
@@ -137,6 +160,7 @@ export function useLiveRunState(runId: string, seed: ApiRunDetail) {
       "status_change",
       "spend_update",
       "agent_run",
+      "agent_output",
       "judge_decision",
       "checkpoint",
       "done",

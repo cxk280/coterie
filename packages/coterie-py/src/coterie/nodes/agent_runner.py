@@ -111,6 +111,17 @@ def make_agent_runner(
             plan = state.get("plan") or [state["task"]]
             prompt = plan[state.get("current_step_idx", 0)]
 
+        # A subscriber injected by the orchestration layer (e.g. the API
+        # runner) is exposed on the graph state under `_agent_output_sink`.
+        # The agent_runner passes it through; everything else stays oblivious.
+        sink = state.get("_agent_output_sink")
+        on_output = None
+        if callable(sink):
+            ctx = {"agent_id": resolved_id, "role": role}
+
+            def on_output(chunk: str, _ctx=ctx) -> None:  # noqa: B008
+                sink(_ctx, chunk)
+
         with span_for_agent(
             agent_id=resolved_id, adapter=agent_cfg["adapter"], role=role
         ) as span:
@@ -122,6 +133,7 @@ def make_agent_runner(
                     prompt,
                     workdir,
                     timeout_s=agent_cfg.get("timeout_s", 600),
+                    on_output=on_output,
                 )
             except Exception as e:  # noqa: BLE001
                 span.record_exception(e)

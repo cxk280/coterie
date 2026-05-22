@@ -164,9 +164,16 @@ class Runner:
             return False
         return run["status"] in ("queued", "running", "awaiting_human")
 
+    # Event kinds delivered to live subscribers but never persisted. The full
+    # text is recoverable from ``run.runs[].stdout`` after termination, so
+    # there's no history to lose; persisting every chunk would bloat the
+    # event log without providing a useful artifact.
+    _EPHEMERAL_KINDS = frozenset({"agent_output"})
+
     async def _emit(self, run_id: str, kind: str, data: dict[str, Any]) -> None:
         ev = {"kind": kind, "data": data, "timestamp": _now()}
-        self.store.append_event(run_id, kind, data)
+        if kind not in self._EPHEMERAL_KINDS:
+            self.store.append_event(run_id, kind, data)
         for q in list(self._subscribers.get(run_id, [])):
             await q.put(ev)
 
@@ -206,6 +213,23 @@ class Runner:
                 initial = _initial_state(task, config)
                 thread_config = {"configurable": {"thread_id": run_id}}
 
+                # Streaming sink for subprocess stdout chunks. Registered on a
+                # contextvar inside the worker thread so it doesn't pollute
+                # LangGraph's checkpoint.
+                def _sink(ctx, chunk, _rid=run_id, _loop=loop):
+                    asyncio.run_coroutine_threadsafe(
+                        self._emit(
+                            _rid,
+                            "agent_output",
+                            {
+                                "agent_id": ctx.get("agent_id"),
+                                "role": ctx.get("role"),
+                                "chunk": chunk,
+                            },
+                        ),
+                        _loop,
+                    )
+
                 self._handles[run_id] = {
                     "graph": graph,
                     "thread_config": thread_config,
@@ -222,6 +246,7 @@ class Runner:
                     run_id,
                     self,
                     loop,
+                    _sink,
                 )
 
                 await self._finalize_or_pause(run_id, final, started, graph, thread_config)
@@ -307,63 +332,75 @@ class Runner:
             pass
 
 
-def _drive_graph(graph, initial, thread_config, run_id, runner: Runner, loop):
-    """Runs inside the worker thread. Emits events back via run_coroutine_threadsafe."""
+def _drive_graph(graph, initial, thread_config, run_id, runner: Runner, loop, output_sink=None):
+    """Runs inside the worker thread. Emits events back via run_coroutine_threadsafe.
+
+    Registers ``output_sink`` on the per-thread contextvar so agent_runner
+    nodes can stream subprocess stdout chunks back to the API runner without
+    plumbing through state.
+    """
+    from coterie.core.output_sink import reset_output_sink, set_output_sink
+
     last_runs_len = 0
     last_spend = 0.0
     last_judge_len = 0
     final = initial or {}
 
-    for chunk in graph.stream(initial, config=thread_config, stream_mode="values"):
-        final = chunk
+    token = set_output_sink(output_sink) if output_sink is not None else None
+    try:
+        for chunk in graph.stream(initial, config=thread_config, stream_mode="values"):
+            final = chunk
 
-        snap = _snapshot(chunk)
-        asyncio.run_coroutine_threadsafe(
-            runner._emit(run_id, "state", {"state": snap}), loop
-        )
-        runner.store.update_current_state(run_id, snap, chunk.get("spend_usd", 0.0))
-
-        new_spend = chunk.get("spend_usd", 0.0)
-        if new_spend > last_spend + 1e-9:
+            snap = _snapshot(chunk)
             asyncio.run_coroutine_threadsafe(
-                runner._emit(run_id, "spend_update", {"spend_usd": new_spend}), loop
+                runner._emit(run_id, "state", {"state": snap}), loop
             )
-            last_spend = new_spend
+            runner.store.update_current_state(run_id, snap, chunk.get("spend_usd", 0.0))
 
-        new_runs = chunk.get("runs", [])
-        for i in range(last_runs_len, len(new_runs)):
-            r = new_runs[i]
-            asyncio.run_coroutine_threadsafe(
-                runner._emit(
-                    run_id,
-                    "agent_run",
-                    {
-                        "agent_id": r.get("agent_id"),
-                        "role": r.get("role"),
-                        "exit_code": r.get("exit_code"),
-                        "duration_s": r.get("duration_s"),
-                        "cost_estimate_usd": r.get("cost_estimate_usd"),
-                        "stdout_preview": (r.get("stdout") or "")[:400],
-                    },
-                ),
-                loop,
-            )
-        last_runs_len = len(new_runs)
+            new_spend = chunk.get("spend_usd", 0.0)
+            if new_spend > last_spend + 1e-9:
+                asyncio.run_coroutine_threadsafe(
+                    runner._emit(run_id, "spend_update", {"spend_usd": new_spend}), loop
+                )
+                last_spend = new_spend
 
-        new_judges = chunk.get("judge_history", [])
-        for i in range(last_judge_len, len(new_judges)):
-            j = new_judges[i]
-            asyncio.run_coroutine_threadsafe(
-                runner._emit(run_id, "judge_decision", j),
-                loop,
-            )
-        last_judge_len = len(new_judges)
+            new_runs = chunk.get("runs", [])
+            for i in range(last_runs_len, len(new_runs)):
+                r = new_runs[i]
+                asyncio.run_coroutine_threadsafe(
+                    runner._emit(
+                        run_id,
+                        "agent_run",
+                        {
+                            "agent_id": r.get("agent_id"),
+                            "role": r.get("role"),
+                            "exit_code": r.get("exit_code"),
+                            "duration_s": r.get("duration_s"),
+                            "cost_estimate_usd": r.get("cost_estimate_usd"),
+                            "stdout_preview": (r.get("stdout") or "")[:400],
+                        },
+                    ),
+                    loop,
+                )
+            last_runs_len = len(new_runs)
 
-        new_status = chunk.get("status")
-        if new_status:
-            asyncio.run_coroutine_threadsafe(
-                runner._emit(run_id, "status_change", {"status": new_status}), loop
-            )
+            new_judges = chunk.get("judge_history", [])
+            for i in range(last_judge_len, len(new_judges)):
+                j = new_judges[i]
+                asyncio.run_coroutine_threadsafe(
+                    runner._emit(run_id, "judge_decision", j),
+                    loop,
+                )
+            last_judge_len = len(new_judges)
+
+            new_status = chunk.get("status")
+            if new_status:
+                asyncio.run_coroutine_threadsafe(
+                    runner._emit(run_id, "status_change", {"status": new_status}), loop
+                )
+    finally:
+        if token is not None:
+            reset_output_sink(token)
 
     return final
 

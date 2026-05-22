@@ -1,19 +1,21 @@
 """The AdapterExecutor seam.
 
-Following slide 10 of the SOLID Agent Swarms deck (Liskov Substitution): every
-place the graph runs an adapter, it goes through an `AdapterExecutor` Protocol.
-The Protocol means we can swap concrete executors without touching the graph
-code.
+Every place the graph runs an adapter goes through an ``AdapterExecutor``
+Protocol. The Protocol means we can swap concrete executors without touching
+the graph code.
 
-v0.1 ships two concretes:
-- `LocalSubprocessExecutor` — shares the workdir across all calls. Default.
-- `IsolatedWorktreeExecutor` — each call runs in an ephemeral git worktree
-  (or plain tempdir fallback). Used by `consensus` and `tournament` modes so
+v1 ships two concretes:
+- ``LocalSubprocessExecutor`` — shares the workdir across calls. Default.
+- ``IsolatedWorktreeExecutor`` — each call runs in an ephemeral git worktree
+  (or plain tempdir fallback). Used by ``consensus`` and ``tournament`` so
   parallel agents don't clobber each other's edits.
 
-v0.2 will add `DockerSwarmExecutor` — same Protocol; each branch in its own
-container. Slide 27: "Two implementations of one abstraction beats one good
-implementation." Two ship today; the third lands without touching graph code.
+``DockerSwarmExecutor`` (each branch in its own container) is the next
+implementation; it lands without touching graph code because of this seam.
+
+Both shipped executors forward an optional ``on_output`` callback to the
+adapter — the orchestration layer wires this through so live UIs can tail
+subprocess stdout chunk-by-chunk.
 """
 
 import logging
@@ -21,11 +23,13 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from coterie.adapters.base import AdapterResult, CLIAdapter
 
 logger = logging.getLogger(__name__)
+
+OnOutput = Callable[[str], None]
 
 
 class AdapterExecutor(Protocol):
@@ -36,15 +40,17 @@ class AdapterExecutor(Protocol):
         workdir: str,
         *,
         timeout_s: int = 600,
+        on_output: OnOutput | None = None,
     ) -> AdapterResult:
         ...
 
 
 class LocalSubprocessExecutor:
-    """Default executor: delegates to `adapter.run()`, which spawns a local subprocess.
+    """Default executor: delegates to ``adapter.run()``.
 
     Stateless and threadsafe. The same instance can be shared by every node.
-    All adapter invocations share the same workdir.
+    When ``on_output`` is supplied, the adapter spawns under a PTY (Unix)
+    and streams stdout chunks to the callback as they arrive.
     """
 
     def execute(
@@ -54,24 +60,20 @@ class LocalSubprocessExecutor:
         workdir: str,
         *,
         timeout_s: int = 600,
+        on_output: OnOutput | None = None,
     ) -> AdapterResult:
-        return adapter.run(prompt, workdir, timeout_s=timeout_s)
+        return adapter.run(prompt, workdir, timeout_s=timeout_s, on_output=on_output)
 
 
 class IsolatedWorktreeExecutor:
-    """Each `execute()` call runs in an ephemeral, isolated workdir.
+    """Each ``execute()`` call runs in an ephemeral, isolated workdir.
 
-    If the supplied workdir is a git repo, uses `git worktree add --detach` to
-    create a checkout the agent can edit freely without colliding with sibling
-    branches. Falls back to a plain `tempfile.mkdtemp` directory when the
-    workdir isn't a git repo (still isolated; just no git history).
+    If the supplied workdir is a git repo, uses ``git worktree add --detach``
+    to create a checkout the agent can edit freely without colliding with
+    sibling branches. Falls back to a plain ``tempfile.mkdtemp`` directory
+    when the workdir isn't a git repo (still isolated; just no git history).
 
     Cleanup runs in a finally so a crashing adapter doesn't leak worktrees.
-
-    Trade-off: each adapter sees a fresh checkout, so file artifacts produced
-    by one branch aren't visible to a sibling branch. That's the whole point.
-    The judge / engine reads from `AgentRun.stdout` and `files_changed`, both
-    of which are captured before cleanup.
     """
 
     def execute(
@@ -81,10 +83,11 @@ class IsolatedWorktreeExecutor:
         workdir: str,
         *,
         timeout_s: int = 600,
+        on_output: OnOutput | None = None,
     ) -> AdapterResult:
         isolated = self._make_isolated(workdir)
         try:
-            return adapter.run(prompt, isolated, timeout_s=timeout_s)
+            return adapter.run(prompt, isolated, timeout_s=timeout_s, on_output=on_output)
         finally:
             self._cleanup(isolated, base=workdir)
 
@@ -92,7 +95,6 @@ class IsolatedWorktreeExecutor:
     def _make_isolated(base: str) -> str:
         d = tempfile.mkdtemp(prefix="coterie-wt-")
         base_path = Path(base)
-        # `.git` may be a dir (normal) or a file (submodule / worktree). Either counts.
         if (base_path / ".git").exists():
             proc = subprocess.run(
                 ["git", "worktree", "add", "--detach", d],
@@ -111,7 +113,6 @@ class IsolatedWorktreeExecutor:
 
     @staticmethod
     def _cleanup(isolated: str, *, base: str) -> None:
-        # If it's a worktree, ask git to detach it first so its admin state is sane.
         subprocess.run(
             ["git", "worktree", "remove", "--force", isolated],
             cwd=base,

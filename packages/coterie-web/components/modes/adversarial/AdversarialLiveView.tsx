@@ -43,17 +43,28 @@ export function AdversarialLiveView({ state }: LiveBodyProps) {
 
   const pipeline = buildPipeline(state.status, roundIdx, runs.length);
 
+  // Prefer the live stdout buffer for whichever implementer is currently
+  // streaming; fall back to the completed run's stdout when the agent has
+  // finished. This makes the panel feel alive instead of swapping in a
+  // 16-line dump at the end.
+  const implAgentId = (lastImpl?.agent_id as string) ?? state.last_active_agent ?? "—";
+  const liveStdout = state.agent_output[implAgentId];
+  const implStdout =
+    liveStdout && state.status !== "done" && state.status !== "failed"
+      ? liveStdout
+      : (lastImpl?.stdout as string) ?? (lastImpl?.stdout_preview as string) ?? "";
+
   return (
     <>
       <PipelineStrip nodes={pipeline} />
       <div className="flex flex-1 overflow-hidden">
         <ImplementerPanel
-          agentId={(lastImpl?.agent_id as string) ?? "—"}
+          agentId={implAgentId}
           durationS={(lastImpl?.duration_s as number) ?? 0}
           costUsd={(lastImpl?.cost_estimate_usd as number) ?? 0}
           round={Math.max(roundIdx, 1)}
-          status={lastImpl ? "done" : "active"}
-          output={parseCodeLines((lastImpl?.stdout as string) ?? (lastImpl?.stdout_preview as string) ?? "")}
+          status={liveStdout && state.status !== "done" ? "active" : lastImpl ? "done" : "active"}
+          output={parseCodeLines(implStdout)}
         />
         <AuditorPanel
           agentId={(lastAuditor?.agent_id as string) ?? "—"}
