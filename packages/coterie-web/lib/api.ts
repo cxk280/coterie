@@ -121,6 +121,33 @@ export const api = {
     post<{ status: string; id: string }>(`/api/runs/${id}/resume`, { decision }),
   authToken: () => get<{ token: string }>("/api/auth/token"),
   rotateToken: () => post<{ token: string }>("/api/auth/rotate", {}),
+  logout: () => post<{ status: string }>("/api/auth/logout", {}),
+  me: () =>
+    get<{
+      id: string;
+      kind: "github" | "dev" | "service";
+      login: string | null;
+      name: string | null;
+      avatar_url: string | null;
+      is_admin: boolean;
+    }>("/api/auth/me"),
+  listTokens: () =>
+    get<
+      Array<{
+        id: string;
+        name: string;
+        prefix: string;
+        created_at: string;
+        last_used_at: string | null;
+        revoked: boolean;
+      }>
+    >("/api/auth/tokens"),
+  createToken: (name: string) =>
+    post<{ id: string; name: string; prefix: string; token: string; created_at: string }>(
+      "/api/auth/tokens",
+      { name },
+    ),
+  revokeToken: (id: string) => del<{ status: string; id: string }>(`/api/auth/tokens/${id}`),
   /** EventSource URL. Token must be in the query string for SSE since EventSource can't set headers. */
   eventsUrl: (id: string) => {
     const t = token();

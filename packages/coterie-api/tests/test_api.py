@@ -19,10 +19,13 @@ from fastapi.testclient import TestClient
 def client(tmp_path):
     os.environ["COTERIE_DB_PATH"] = str(tmp_path / "test.sqlite")
     os.environ["COTERIE_API_TOKEN_PATH"] = str(tmp_path / "token")
-    os.environ["COTERIE_RUN_TTL_DAYS"] = "0"  # disable cleanup loop
-    from coterie_api.auth import _cached
+    os.environ["COTERIE_CHECKPOINT_DB"] = str(tmp_path / "checkpoints.sqlite")
+    os.environ["COTERIE_RUN_TTL_DAYS"] = "0"
+    os.environ["COTERIE_EVENT_TTL_DAYS"] = "0"
+    os.environ["COTERIE_API_ALLOW_LOCALHOST"] = "0"  # force auth-required behavior in tests
     import coterie_api.auth as auth_mod
-    auth_mod._cached = None
+
+    auth_mod._cached_legacy = None
     from coterie_api.main import app
 
     with TestClient(app) as c:
@@ -37,7 +40,9 @@ def auth(client):
 def test_health_is_unauth(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    payload = r.json()
+    assert payload["status"] == "ok"
+    assert "github_oauth" in payload
 
 
 def test_modes_requires_auth(client):
@@ -198,3 +203,89 @@ def test_runner_uses_persistent_checkpointer(client):
     from coterie_api.main import app
 
     assert isinstance(app.state.runner._checkpointer, SqliteSaver)
+
+
+# ---------- multi-user auth ----------
+
+
+def test_me_returns_service_user_when_using_legacy_token(client):
+    r = client.get("/api/auth/me", headers=auth(client))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "service"
+    assert body["is_admin"] is True
+
+
+def test_personal_access_token_round_trip(client):
+    """Issue a PAT as the legacy/service user, then use it on a fresh client."""
+    h = auth(client)
+    # Create the token
+    r = client.post("/api/auth/tokens", headers=h, json={"name": "my laptop"})
+    assert r.status_code == 200
+    body = r.json()
+    pat = body["token"]
+    assert pat.startswith("ck_")
+    tid = body["id"]
+
+    # Use it
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {pat}"})
+    assert r.status_code == 200
+    # PATs inherit the issuer (service user)
+    assert r.json()["kind"] == "service"
+
+    # List shows it
+    rows = client.get("/api/auth/tokens", headers=h).json()
+    assert any(t["id"] == tid for t in rows)
+    assert all("token" not in t for t in rows)  # secrets never returned again
+
+    # Revoke
+    r = client.delete(f"/api/auth/tokens/{tid}", headers=h)
+    assert r.status_code == 200
+    # Revoked PAT no longer authenticates
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {pat}"})
+    assert r.status_code == 401
+
+
+def test_run_ownership_admin_sees_all(client):
+    """Service user (admin) sees runs owned by anyone."""
+    import time
+    from coterie.adapters.base import AdapterResult
+    from coterie.adapters.fake import FakeAdapter
+
+    FakeAdapter.reset_all()
+    FakeAdapter.script("a", [AdapterResult("hi", "", 0, cost_estimate_usd=0.01)])
+
+    cfg = {
+        "version": 1,
+        "agents": [{"id": "a", "adapter": "fake"}],
+        "router": {"enabled": False},
+    }
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={"task": "owned by service", "mode": "single", "config": cfg},
+    )
+    rid = r.json()["id"]
+    for _ in range(50):
+        if client.get(f"/api/runs/{rid}", headers=auth(client)).json()["summary"]["status"] in ("done", "failed"):
+            break
+        time.sleep(0.1)
+
+    # The service user sees it
+    listed = client.get("/api/runs", headers=auth(client)).json()
+    assert any(item["id"] == rid for item in listed["items"])
+    # And it's owned by the service user
+    detail = client.get(f"/api/runs/{rid}", headers=auth(client)).json()
+    assert detail["summary"]["owner_id"] == "service-user"
+
+
+def test_oauth_disabled_returns_503(client):
+    """With no GITHUB_CLIENT_ID, the OAuth endpoints return a friendly 503."""
+    r = client.get("/api/auth/github/login", headers=auth(client), follow_redirects=False)
+    assert r.status_code == 503
+
+
+def test_logout_clears_cookie(client):
+    r = client.post("/api/auth/logout", headers=auth(client))
+    assert r.status_code == 200
+    assert r.json()["status"] == "logged_out"

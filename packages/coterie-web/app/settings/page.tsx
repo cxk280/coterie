@@ -1,8 +1,10 @@
+import { TokenManager } from "@/components/settings/TokenManager";
 import { AppNav } from "@/components/ui/AppNav";
 import { PROVIDERS } from "@/lib/mock-data";
 
 const SIDE_NAV = [
   "Providers",
+  "Tokens",
   "Defaults",
   "Budget & limits",
   "HIL checkpoints",
@@ -157,6 +159,10 @@ export default function SettingsPage() {
               </div>
             </article>
           ))}
+
+          <div className="h-px" style={{ background: "var(--color-border-subtle)" }} />
+
+          <TokenManager />
         </main>
       </div>
     </div>

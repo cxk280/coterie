@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS runs (
     config_json TEXT NOT NULL,
     current_state_json TEXT,
     final_state_json TEXT,
+    owner_id TEXT,
     spend_usd REAL NOT NULL DEFAULT 0,
     duration_s REAL,
     created_at TEXT NOT NULL,
@@ -40,8 +41,44 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('github', 'dev', 'service')),
+    github_id INTEGER,
+    github_login TEXT,
+    name TEXT,
+    avatar_url TEXT,
+    created_at TEXT NOT NULL,
+    last_login_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id
+    ON users (github_id) WHERE github_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_owner ON runs (owner_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_seq ON events (run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens (user_id);
 """
 
 
@@ -50,6 +87,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
     if "current_state_json" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN current_state_json TEXT;")
+    if "owner_id" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN owner_id TEXT;")
 
 
 class Store:
@@ -76,13 +115,21 @@ class Store:
 
     # ---------- runs ----------
 
-    def insert_run(self, run_id: str, task: str, mode: str, config: dict[str, Any]) -> None:
+    def insert_run(
+        self,
+        run_id: str,
+        task: str,
+        mode: str,
+        config: dict[str, Any],
+        *,
+        owner_id: str | None = None,
+    ) -> None:
         now = _now()
         with self._conn() as c:
             c.execute(
-                """INSERT INTO runs (id, task, mode, status, config_json, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (run_id, task, mode, "queued", json.dumps(config), now, now),
+                """INSERT INTO runs (id, task, mode, status, config_json, owner_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, task, mode, "queued", json.dumps(config), owner_id, now, now),
             )
 
     def update_run_status(
@@ -273,6 +320,7 @@ def _build_where(
 
 
 def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
+    keys = row.keys() if hasattr(row, "keys") else []
     return {
         "id": row["id"],
         "task": row["task"],
@@ -282,6 +330,7 @@ def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
         "config": json.loads(row["config_json"]),
         "current_state": json.loads(row["current_state_json"]) if row["current_state_json"] else None,
         "final_state": json.loads(row["final_state_json"]) if row["final_state_json"] else None,
+        "owner_id": row["owner_id"] if "owner_id" in keys else None,
         "spend_usd": row["spend_usd"],
         "duration_s": row["duration_s"],
         "created_at": row["created_at"],

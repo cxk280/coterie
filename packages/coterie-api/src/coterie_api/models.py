@@ -32,6 +32,7 @@ class RunSummary(BaseModel):
     agents: list[str]
     spend_usd: float
     duration_s: float | None = None
+    owner_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -56,3 +57,36 @@ class RunDetail(BaseModel):
 
 class ResumeRequest(BaseModel):
     decision: Literal["approve", "reject"]
+
+
+# ---------- auth ----------
+
+
+class MeResponse(BaseModel):
+    id: str
+    kind: Literal["github", "dev", "service"]
+    login: str | None = None
+    name: str | None = None
+    avatar_url: str | None = None
+    is_admin: bool
+
+
+class CreateTokenRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class CreateTokenResponse(BaseModel):
+    id: str
+    name: str
+    prefix: str
+    token: str  # shown to the user EXACTLY once
+    created_at: str
+
+
+class TokenSummary(BaseModel):
+    id: str
+    name: str
+    prefix: str
+    created_at: str
+    last_used_at: str | None = None
+    revoked: bool

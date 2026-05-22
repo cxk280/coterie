@@ -1,19 +1,8 @@
 """FastAPI app.
 
-Endpoints
----------
-GET    /api/health                 — liveness; no auth
-GET    /api/modes                  — list registered modes
-GET    /api/agents                 — list registered adapters
-POST   /api/runs                   — create a new run
-GET    /api/runs?limit=&offset=    — paginated list of runs (most recent first)
-GET    /api/runs/{id}              — get a single run (current + final state)
-DELETE /api/runs/{id}              — delete a run + its events
-POST   /api/runs/{id}/resume       — approve / reject at an HIL checkpoint
-GET    /api/runs/{id}/events       — Server-Sent Events stream
-
-GET    /api/auth/token             — show the current token (auth'd)
-POST   /api/auth/rotate            — generate a new token (auth'd)
+See packages/coterie-api/README.md for the endpoint reference. Authentication
+is resolved via the auth.resolve_user dependency for every route except
+/api/health.
 """
 
 from __future__ import annotations
@@ -26,23 +15,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
-import coterie  # noqa: F401
+import coterie  # noqa: F401  (trigger registry side effects)
 from coterie.core.registry import ADAPTER_REGISTRY, MODE_REGISTRY
 
-from coterie_api.auth import auth_required, current_token, rotate_token
+from coterie_api import oauth
+from coterie_api.auth import (
+    SESSION_COOKIE,
+    auth_required,
+    current_token,
+    current_user,
+    ensure_owner_or_admin,
+    rotate_token,
+)
 from coterie_api.models import (
     CreateRunRequest,
+    CreateTokenRequest,
+    CreateTokenResponse,
+    MeResponse,
     ResumeRequest,
     RunDetail,
     RunListResponse,
     RunSummary,
+    TokenSummary,
 )
 from coterie_api.runner import Runner
 from coterie_api.store import Store, cutoff_for
+from coterie_api.users import (
+    User,
+    create_token,
+    delete_session,
+    list_tokens,
+    purge_expired_sessions,
+    revoke_token,
+)
 
 TTL_DAYS = int(os.environ.get("COTERIE_RUN_TTL_DAYS", "30"))
 EVENT_TTL_DAYS = int(os.environ.get("COTERIE_EVENT_TTL_DAYS", "7"))
@@ -86,6 +96,9 @@ async def _cleanup_loop(store: Store) -> None:
                 ev_removed = store.delete_events_older_than(ev_cutoff)
                 if ev_removed:
                     print(f"coterie-api: pruned {ev_removed} events older than {EVENT_TTL_DAYS}d")
+            purged = purge_expired_sessions(store)
+            if purged:
+                print(f"coterie-api: purged {purged} expired session(s)")
         except Exception as e:  # noqa: BLE001
             print(f"coterie-api: cleanup error: {e}")
         await asyncio.sleep(CLEANUP_INTERVAL_S)
@@ -106,56 +119,63 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "github_oauth": oauth.github_enabled(),
+    }
 
 
 # ---------- registries ----------
 
 
-@app.get("/api/modes", dependencies=[Depends(auth_required)])
-async def modes() -> list[str]:
+@app.get("/api/modes")
+async def modes(_: User = Depends(current_user)) -> list[str]:
     return MODE_REGISTRY.names()
 
 
-@app.get("/api/agents", dependencies=[Depends(auth_required)])
-async def agents() -> list[dict[str, str]]:
+@app.get("/api/agents")
+async def agents(_: User = Depends(current_user)) -> list[dict[str, str]]:
     return [{"name": n} for n in ADAPTER_REGISTRY.names()]
 
 
 # ---------- runs ----------
 
 
-@app.post("/api/runs", response_model=RunSummary, dependencies=[Depends(auth_required)])
-async def create_run(req: CreateRunRequest) -> RunSummary:
+@app.post("/api/runs", response_model=RunSummary)
+async def create_run(req: CreateRunRequest, user: User = Depends(current_user)) -> RunSummary:
     runner: Runner = app.state.runner
-    run_id = await runner.create_run(task=req.task, mode=req.mode, config=req.config)
+    run_id = await runner.create_run(
+        task=req.task, mode=req.mode, config=req.config, owner_id=user.id
+    )
     run = app.state.store.get_run(run_id)
     return _to_summary(run)
 
 
-@app.get("/api/runs", response_model=RunListResponse, dependencies=[Depends(auth_required)])
+@app.get("/api/runs", response_model=RunListResponse)
 async def list_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     mode: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
+    user: User = Depends(current_user),
 ) -> RunListResponse:
-    rows = app.state.store.list_runs(limit=limit, offset=offset, mode=mode, status=status)
-    total = app.state.store.count_runs(mode=mode, status=status)
+    owner_filter = None if user.is_admin else user.id
+    rows = app.state.store.list_runs(
+        limit=limit, offset=offset, mode=mode, status=status, owner_id=owner_filter
+    )
+    total = app.state.store.count_runs(mode=mode, status=status, owner_id=owner_filter)
     return RunListResponse(
-        items=[_to_summary(r) for r in rows],
-        total=total,
-        limit=limit,
-        offset=offset,
+        items=[_to_summary(r) for r in rows], total=total, limit=limit, offset=offset
     )
 
 
-@app.get("/api/runs/{run_id}", response_model=RunDetail, dependencies=[Depends(auth_required)])
-async def get_run(run_id: str) -> RunDetail:
+@app.get("/api/runs/{run_id}", response_model=RunDetail)
+async def get_run(run_id: str, user: User = Depends(current_user)) -> RunDetail:
     run = app.state.store.get_run(run_id)
     if run is None:
         raise HTTPException(404, f"run {run_id} not found")
+    ensure_owner_or_admin(owner_id=run.get("owner_id"), user=user)
     state = run.get("current_state") or run.get("final_state") or {}
     return RunDetail(
         summary=_to_summary(run),
@@ -169,33 +189,46 @@ async def get_run(run_id: str) -> RunDetail:
     )
 
 
-@app.delete("/api/runs/{run_id}", dependencies=[Depends(auth_required)])
-async def delete_run(run_id: str) -> dict[str, str]:
-    ok = app.state.store.delete_run(run_id)
-    if not ok:
-        raise HTTPException(404, f"run {run_id} not found")
-    return {"status": "deleted", "id": run_id}
-
-
-@app.post("/api/runs/{run_id}/compact", dependencies=[Depends(auth_required)])
-async def compact_run(run_id: str) -> dict[str, int | str]:
+@app.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str, user: User = Depends(current_user)) -> dict[str, str]:
     run = app.state.store.get_run(run_id)
     if run is None:
         raise HTTPException(404, f"run {run_id} not found")
+    ensure_owner_or_admin(owner_id=run.get("owner_id"), user=user)
+    app.state.store.delete_run(run_id)
+    return {"status": "deleted", "id": run_id}
+
+
+@app.post("/api/runs/{run_id}/compact")
+async def compact_run(run_id: str, user: User = Depends(current_user)) -> dict[str, int | str]:
+    run = app.state.store.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    ensure_owner_or_admin(owner_id=run.get("owner_id"), user=user)
     removed = app.state.store.compact_events(run_id)
     return {"id": run_id, "events_removed": removed}
 
 
-@app.post("/api/runs/{run_id}/resume", dependencies=[Depends(auth_required)])
-async def resume_run(run_id: str, req: ResumeRequest) -> dict[str, str]:
+@app.post("/api/runs/{run_id}/resume")
+async def resume_run(
+    run_id: str, req: ResumeRequest, user: User = Depends(current_user)
+) -> dict[str, str]:
+    run = app.state.store.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    ensure_owner_or_admin(owner_id=run.get("owner_id"), user=user)
     ok = await app.state.runner.resume_run(run_id, approve=req.decision == "approve")
     if not ok:
         raise HTTPException(404, f"run {run_id} has no resumable handle")
     return {"status": "resumed" if req.decision == "approve" else "rejected", "id": run_id}
 
 
-@app.get("/api/runs/{run_id}/events", dependencies=[Depends(auth_required)])
-async def stream_events(run_id: str):
+@app.get("/api/runs/{run_id}/events")
+async def stream_events(run_id: str, user: User = Depends(current_user)):
+    run = app.state.store.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    ensure_owner_or_admin(owner_id=run.get("owner_id"), user=user)
     runner: Runner = app.state.runner
 
     async def event_generator():
@@ -205,17 +238,99 @@ async def stream_events(run_id: str):
     return EventSourceResponse(event_generator())
 
 
-# ---------- auth ----------
+# ---------- auth (general) ----------
 
 
-@app.get("/api/auth/token", dependencies=[Depends(auth_required)])
-async def get_token() -> dict[str, str]:
+@app.get("/api/auth/me", response_model=MeResponse)
+async def me(user: User = Depends(current_user)) -> MeResponse:
+    return MeResponse(
+        id=user.id,
+        kind=user.kind,
+        login=user.github_login,
+        name=user.name,
+        avatar_url=user.avatar_url,
+        is_admin=user.is_admin,
+    )
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if cookie:
+        delete_session(app.state.store, cookie)
+    resp = JSONResponse({"status": "logged_out"})
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+
+# ---------- legacy token (back-compat) ----------
+
+
+@app.get("/api/auth/token")
+async def get_token(_: User = Depends(auth_required)) -> dict[str, str]:
     return {"token": current_token()}
 
 
-@app.post("/api/auth/rotate", dependencies=[Depends(auth_required)])
-async def rotate() -> dict[str, str]:
+@app.post("/api/auth/rotate")
+async def rotate(_: User = Depends(auth_required)) -> dict[str, str]:
     return {"token": rotate_token()}
+
+
+# ---------- personal access tokens ----------
+
+
+@app.get("/api/auth/tokens", response_model=list[TokenSummary])
+async def my_tokens(user: User = Depends(current_user)) -> list[TokenSummary]:
+    return [
+        TokenSummary(
+            id=t.id,
+            name=t.name,
+            prefix=t.prefix,
+            created_at=t.created_at,
+            last_used_at=t.last_used_at,
+            revoked=t.revoked_at is not None,
+        )
+        for t in list_tokens(app.state.store, user.id)
+    ]
+
+
+@app.post("/api/auth/tokens", response_model=CreateTokenResponse)
+async def create_token_route(
+    req: CreateTokenRequest, user: User = Depends(current_user)
+) -> CreateTokenResponse:
+    rec, secret = create_token(app.state.store, user.id, req.name)
+    return CreateTokenResponse(
+        id=rec.id,
+        name=rec.name,
+        prefix=rec.prefix,
+        token=secret,
+        created_at=rec.created_at,
+    )
+
+
+@app.delete("/api/auth/tokens/{token_id}")
+async def revoke_token_route(token_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+    ok = revoke_token(app.state.store, user.id, token_id)
+    if not ok:
+        raise HTTPException(404, f"token {token_id} not found or already revoked")
+    return {"status": "revoked", "id": token_id}
+
+
+# ---------- GitHub OAuth ----------
+
+
+@app.get("/api/auth/github/login")
+async def github_login(request: Request, next: Annotated[str | None, Query()] = None):
+    return oauth.login_redirect(request, next_path=next)
+
+
+@app.get("/api/auth/github/callback")
+async def github_callback(
+    request: Request,
+    code: Annotated[str | None, Query()] = None,
+    state: Annotated[str | None, Query()] = None,
+):
+    return await oauth.callback(request, code, state)
 
 
 # ---------- helpers ----------
@@ -233,6 +348,7 @@ def _to_summary(run: dict) -> RunSummary:
         agents=agents_list,
         spend_usd=run["spend_usd"] or 0.0,
         duration_s=run.get("duration_s"),
+        owner_id=run.get("owner_id"),
         created_at=_parse_dt(run["created_at"]),
         updated_at=_parse_dt(run["updated_at"]),
     )

@@ -97,10 +97,17 @@ class Runner:
 
     # ---------- public API ----------
 
-    async def create_run(self, *, task: str, mode: Mode, config: dict[str, Any]) -> str:
+    async def create_run(
+        self,
+        *,
+        task: str,
+        mode: Mode,
+        config: dict[str, Any],
+        owner_id: str | None = None,
+    ) -> str:
         run_id = uuid.uuid4().hex[:12]
         config = {**config, "mode": mode}
-        self.store.insert_run(run_id, task, mode, config)
+        self.store.insert_run(run_id, task, mode, config, owner_id=owner_id)
         self._subscribers[run_id] = []
         asyncio.create_task(self._run(run_id, task, config))
         return run_id
