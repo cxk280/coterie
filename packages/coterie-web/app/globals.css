@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * Coterie design tokens (mirrors schemas/coterie.config.schema.json
+ * and the Figma file at https://www.figma.com/design/EYBMgxiSo24ymGh066uy3z).
+ * Dark mode is the only mode — there is no light theme.
+ * ============================================================ */
+
+@theme {
+  /* Backgrounds */
+  --color-bg-canvas: #0a0b0d;
+  --color-bg-surface: #14161a;
+  --color-bg-raised: #1c1f24;
+  --color-bg-hover: #242830;
+  --color-bg-active: #2d333b;
+
+  /* Text */
+  --color-text-primary: #f0f1f3;
+  --color-text-secondary: #9ca3af;
+  --color-text-tertiary: #6b7280;
+  --color-text-disabled: #4b5563;
+
+  /* Borders */
+  --color-border-subtle: #22262c;
+  --color-border-default: #2d333b;
+  --color-border-strong: #3b4250;
+
+  /* Mode accents */
+  --color-mode-single: #06b6d4;
+  --color-mode-consensus: #8b5cf6;
+  --color-mode-adversarial: #ec4899;
+  --color-mode-debate: #3b82f6;
+  --color-mode-tournament: #f97316;
+
+  /* Status */
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-error: #ef4444;
+  --color-status-info: #06b6d4;
+  --color-status-pending: #9ca3af;
+
+  /* Severity (auditor findings) */
+  --color-severity-low: #6b7280;
+  --color-severity-medium: #f59e0b;
+  --color-severity-high: #f97316;
+  --color-severity-critical: #ef4444;
+
+  /* Fonts */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+}
+
+/* Reset + global defaults */
+html,
+body {
+  background: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border-default);
+}
+
+/* Code / mono */
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+/* Focus styles — keyboard users matter */
+:focus-visible {
+  outline: 2px solid var(--color-mode-adversarial);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-mode-adversarial);
+  color: var(--color-bg-canvas);
+}

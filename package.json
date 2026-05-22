@@ -5,7 +5,8 @@
   "description": "Monorepo root for Coterie — a LangGraph orchestrator for heterogeneous coding agents.",
   "license": "MIT",
   "workspaces": [
-    "packages/coterie-js"
+    "packages/coterie-js",
+    "packages/coterie-web"
   ],
   "scripts": {
     "build": "npm run -ws build",

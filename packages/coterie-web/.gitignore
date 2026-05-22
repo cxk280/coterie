@@ -1,0 +1,16 @@
+# next.js
+.next/
+out/
+
+# typescript
+*.tsbuildinfo
+
+# dependencies (root .gitignore already covers node_modules)
+
+# build artifacts
+build/
+dist/
+
+# misc
+.DS_Store
+.env*.local

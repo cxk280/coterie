@@ -1,0 +1,167 @@
+/** Static mock data for the dashboard + adversarial live view until a real backend lands. */
+
+import type { Finding, RunSummary } from "./types";
+
+export const RECENT_RUNS: RunSummary[] = [
+  {
+    id: "run_01",
+    task: "Refactor src/auth.ts to remove the legacy session middleware",
+    mode: "adversarial",
+    agents: ["claude-code", "codex"],
+    duration_s: 134,
+    cost_usd: 2.84,
+    status: "done",
+    when: "2m ago",
+  },
+  {
+    id: "run_02",
+    task: "Find every bug in pkg/router/",
+    mode: "consensus",
+    agents: ["claude-code", "codex", "aider", "cursor"],
+    duration_s: 62,
+    cost_usd: 1.12,
+    status: "done",
+    status_reason: "3 confirmed · 2 needs-verify · 4 unverified",
+    when: "12m ago",
+  },
+  {
+    id: "run_03",
+    task: "Postgres or SQLite for the orders db on our 50k MAU app?",
+    mode: "debate",
+    agents: ["claude-code", "codex"],
+    duration_s: 58,
+    cost_usd: 0.87,
+    status: "done",
+    status_reason: "Judge: pro (claude) — 8/6",
+    when: "1h ago",
+  },
+  {
+    id: "run_04",
+    task: "Implement /api/v2/checkout — high-stakes; want best of 4",
+    mode: "tournament",
+    agents: ["claude", "codex", "aider", "cursor"],
+    duration_s: 221,
+    cost_usd: 4.62,
+    status: "done",
+    status_reason: "Winner: claude-code",
+    when: "2h ago",
+  },
+  {
+    id: "run_05",
+    task: "Rename `foo` → `bar` across src/api/ and update tests",
+    mode: "single",
+    agents: ["claude-code", "codex"],
+    duration_s: 42,
+    cost_usd: 0.32,
+    status: "done",
+    when: "5h ago",
+  },
+  {
+    id: "run_06",
+    task: "Migrate to Prisma 6 with breaking schema changes",
+    mode: "adversarial",
+    agents: ["claude-code", "codex"],
+    duration_s: 494,
+    cost_usd: 5.0,
+    status: "failed",
+    status_reason: "budget exceeded after round 2",
+    when: "yesterday",
+  },
+];
+
+export const MOCK_LIVE_ADVERSARIAL = {
+  task: "Refactor src/auth.ts to remove the legacy session middleware",
+  status: "auditing" as const,
+  spend_usd: 1.84,
+  budget_usd: 5.0,
+  round_idx: 2,
+  max_rounds: 3,
+  implementer: {
+    agent_id: "claude-code",
+    duration_s: 8.2,
+    cost_usd: 0.48,
+    status: "done" as const,
+    output: [
+      { line: 1, text: "// Round 2 — addressing sustained critique:", kind: "comment" },
+      { line: 2, text: "//   [high] auth() silently catches non-Error throws", kind: "comment" },
+      { line: 3, text: "", kind: "blank" },
+      { line: 4, text: "import { z } from 'zod';", kind: "import" },
+      { line: 5, text: "import { SessionError, isSessionError } from './errors';", kind: "import" },
+      { line: 6, text: "", kind: "blank" },
+      { line: 7, text: "export async function auth(req: Request) {", kind: "code" },
+      { line: 8, text: "  const token = req.headers.get('authorization');", kind: "code" },
+      { line: 9, text: "  if (!token) throw new SessionError('missing-token');", kind: "code" },
+      { line: 10, text: "  try {", kind: "code" },
+      { line: 11, text: "    return await verifySession(token);", kind: "code" },
+      { line: 12, text: "  } catch (err: unknown) {", kind: "code" },
+      { line: 13, text: "    if (isSessionError(err)) throw err;", kind: "code" },
+      { line: 14, text: "    throw new SessionError('unknown', { cause: err });", kind: "code" },
+      { line: 15, text: "  }", kind: "code" },
+      { line: 16, text: "}", kind: "code" },
+    ],
+  },
+  auditor: {
+    agent_id: "codex",
+    streaming: true,
+    findings_so_far: 4,
+    findings: [
+      {
+        severity: "critical",
+        category: "security",
+        description:
+          "verifySession() result is returned without checking exp claim — expired tokens pass.",
+        line_ranges: ["src/auth.ts:11"],
+      },
+      {
+        severity: "high",
+        category: "bug",
+        description:
+          "isSessionError() type predicate is correct but the import path uses ./errors, which doesn't export it (only re-exports SessionError).",
+        line_ranges: ["src/auth.ts:5"],
+      },
+      {
+        severity: "medium",
+        category: "perf",
+        description:
+          "verifySession is awaited inside try; consider promise.catch shape to drop the extra microtask in hot path.",
+        line_ranges: ["src/auth.ts:11-14"],
+      },
+      {
+        severity: "low",
+        category: "clarity",
+        description:
+          "SessionError('unknown', { cause: err }) — 'unknown' as a code value is vague; prefer 'verify-failed' or similar.",
+        line_ranges: ["src/auth.ts:14"],
+      },
+    ] as Finding[],
+  },
+  pipeline: [
+    { id: "planner", label: "planner", status: "done" as const },
+    { id: "implementer-r1", label: "implementer", status: "done" as const, sub: "r1" },
+    { id: "auditor-r1", label: "auditor", status: "done" as const, sub: "r1" },
+    { id: "judge-r1", label: "judge", status: "done" as const, sub: "r1 · revise" },
+    { id: "implementer-r2", label: "implementer", status: "done" as const, sub: "r2" },
+    { id: "auditor-r2", label: "auditor", status: "active" as const, sub: "r2" },
+    { id: "judge-r2", label: "judge", status: "pending" as const, sub: "r2" },
+  ],
+  round_verdicts: [
+    {
+      round: 1,
+      verdict: "revise" as const,
+      reason: "Sustained: silent error-swallow in try/catch. Reject minor: line length nitpick.",
+      scores_summary: "sustained 1 · rejected 1",
+    },
+    {
+      round: 2,
+      verdict: "pending" as const,
+      reason: null,
+      scores_summary: "awaiting judge",
+    },
+  ],
+  checkpoints: {
+    before_judge: true,
+    before_git_commit: true,
+    before_implementer: false,
+    before_pytest: false,
+  },
+};
