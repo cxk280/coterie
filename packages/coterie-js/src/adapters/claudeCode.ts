@@ -1,7 +1,10 @@
 import { CLIAdapter, type AdapterResult } from "./base.js";
+import { registerAdapter } from "../core/registry.js";
 
 export class ClaudeCodeAdapter extends CLIAdapter {
-  buildCommand(prompt: string, _workdir: string, _extra: Record<string, unknown>): string[] {
+  static readonly adapterName = "claude-code";
+
+  buildCommand(prompt: string): string[] {
     const cmd = ["claude", "-p", prompt, "--output-format", "json"];
     if (this.model) cmd.push("--model", this.model);
     return cmd;
@@ -30,3 +33,5 @@ export class ClaudeCodeAdapter extends CLIAdapter {
     }
   }
 }
+
+registerAdapter(ClaudeCodeAdapter);

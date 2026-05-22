@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { ClaudeCodeAdapter } from "../src/adapters/claudeCode.js";
-import { VERSION } from "../src/index.js";
+import { ADAPTER_REGISTRY, MODE_REGISTRY, ClaudeCodeAdapter, VERSION } from "../src/index.js";
 
 describe("coterie smoke", () => {
-  it("exports a version", () => {
-    expect(VERSION).toBe("0.0.1");
+  it("exports VERSION 0.1.0", () => {
+    expect(VERSION).toBe("0.1.0");
   });
 
-  it("claude adapter builds expected argv", () => {
+  it("registers built-in adapters", () => {
+    const names = ADAPTER_REGISTRY.names();
+    expect(names).toEqual(expect.arrayContaining(["claude-code", "codex", "fake"]));
+  });
+
+  it("registers all 5 modes", () => {
+    const names = MODE_REGISTRY.names().sort();
+    expect(names).toEqual(["adversarial", "consensus", "debate", "single", "tournament"]);
+  });
+
+  it("ClaudeCodeAdapter builds expected argv", () => {
     const a = new ClaudeCodeAdapter("claude");
     const cmd = a.buildCommand("hello", ".", {});
     expect(cmd.slice(0, 2)).toEqual(["claude", "-p"]);
@@ -16,14 +25,14 @@ describe("coterie smoke", () => {
     expect(cmd).toContain("--output-format");
   });
 
-  it("claude adapter parses json payload", () => {
+  it("ClaudeCodeAdapter parses json payload", () => {
     const a = new ClaudeCodeAdapter("claude");
     const r = a.parseResult('{"result":"ok","total_cost_usd":0.0012}', "", 0);
     expect(r.stdout).toBe("ok");
     expect(r.cost_estimate_usd).toBe(0.0012);
   });
 
-  it("claude adapter falls back on non-json", () => {
+  it("ClaudeCodeAdapter falls back on non-json", () => {
     const a = new ClaudeCodeAdapter("claude");
     const r = a.parseResult("plain", "warn", 1);
     expect(r.stdout).toBe("plain");

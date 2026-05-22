@@ -1,9 +1,10 @@
-import { CLIAdapter } from "./base.js";
-import { ClaudeCodeAdapter } from "./claudeCode.js";
+/** Importing this module triggers all built-in adapter registrations. */
 
-export const REGISTRY: Record<string, new (id: string, opts?: { model?: string }) => CLIAdapter> = {
-  "claude-code": ClaudeCodeAdapter,
-};
+import "./claudeCode.js";
+import "./codex.js";
+import "./fake.js";
 
-export { CLIAdapter, ClaudeCodeAdapter };
-export type { AdapterResult } from "./base.js";
+export { CLIAdapter, type AdapterResult, type CLIAdapterCtor } from "./base.js";
+export { ClaudeCodeAdapter } from "./claudeCode.js";
+export { CodexAdapter } from "./codex.js";
+export { FakeAdapter, FakeAdapterError } from "./fake.js";

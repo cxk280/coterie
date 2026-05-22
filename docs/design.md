@@ -62,12 +62,11 @@ Clusters are produced by an LLM. The engine prompt instructs strict clustering: 
 
 ## 6. v0.2 roadmap
 
-- **DockerSwarmExecutor** — concrete second implementation of `AdapterExecutor`. Each fan-out branch in `consensus` / `tournament` gets its own container with the workdir bind-mounted; solves the worktree-collision problem in the current v0.1 minimal `LocalSubprocessExecutor`. Slide 18–19 of the deck.
-- **Human-in-the-loop interrupts** — wire `interrupt_before` to YAML `checkpoints:` per-node toggles. Tier 1 is `rich.prompt`-driven inline confirmations; tier 2 is a `textual` TUI.
-- **JS mode parity** — port all five modes to `packages/coterie-js/`. Schema and YAML stay shared; runtimes choose which LangGraph implementation to use.
-- **Multi-round tournament** — bracket elimination. The architecture already supports this; only the bracket judge wiring needs updating.
-- **Budget enforcement** — wire `budget.max_usd_per_task` and `on_exceed: halt|warn|checkpoint` through the graph. v0.1 tracks `spend_usd` but doesn't gate on it yet.
+- **DockerSwarmExecutor** — concrete third implementation of `AdapterExecutor` (after `LocalSubprocessExecutor` and `IsolatedWorktreeExecutor`). Each fan-out branch gets its own container with the workdir bind-mounted; solves the production-isolation gap (`IsolatedWorktreeExecutor` already solves the local collision problem). Slide 18–19 of the deck.
+- **HIL TUI** — v0.1 ships inline `rich.prompt` confirmations. v0.2 adds a full-screen `textual` (Python) / `ink` (Node) TUI showing live state.
 - **Observability** — Langfuse first (MIT, self-hostable); LangSmith as a config option. File-backed JSONL by default. See slide 25's gotcha list.
+- **True parallel multi-round tournament** — current implementation eliminates losers across rounds but each re-entry runs participants sequentially due to LangGraph state delivery semantics. v0.2 will use `Send()` to keep rounds fully parallel.
+- **LLM-driven planner depth** — v0.1's planner generates flat subtask lists. v0.2 will support nested decomposition (tasks with sub-subtasks) and dependency graphs.
 
 ## 7. Sandboxing posture (parking)
 
@@ -82,11 +81,13 @@ The CLIs we orchestrate (Claude Code, Codex) already implement permission system
 
 ## 8. Known v0.1 limitations
 
-1. **Fan-out worktree collisions** — `consensus` and `tournament` participants share the workdir. v0.2's `DockerSwarmExecutor` fixes this.
-2. **Trivial planner** — `plan == [task]`. Real LLM-driven planning is v0.2.
-3. **JS package is single-mode only** — all five modes only ship in Python at v0.1. JS catches up in v0.1.x.
-4. **No budget enforcement** — tracking only.
-5. **No HIL checkpoints** — schema accepts them; wiring is v0.2.
-6. **Single-round tournament** — multi-round elimination is v0.1.x.
+All six gaps from the original v0.1 design have been filled:
 
-These are all on the v0.2 roadmap with the architecture already shaped to receive them.
+1. ~~Fan-out worktree collisions~~ — `IsolatedWorktreeExecutor` now provides per-call git worktrees for `consensus` and `tournament`.
+2. ~~Trivial planner~~ — `make_llm_planner_node` decomposes tasks via an LLM when `planner.enabled: true`.
+3. ~~JS package is single-mode only~~ — all five modes ship in TypeScript with 27 tests.
+4. ~~No budget enforcement~~ — `agent_runner` checks `warn_at_usd` / `max_usd_per_task` with halt/warn/checkpoint policies.
+5. ~~No HIL checkpoints~~ — `compile_with_interrupts` reads `config.checkpoints` and wires LangGraph's `interrupt_before` + an in-memory checkpointer. CLI handles the resume/reject loop.
+6. ~~Single-round tournament~~ — `tournament.rounds: N` enables bracket elimination via state-driven loops.
+
+Remaining work all lives in v0.2 (see section 6): production-grade Docker isolation, full TUI, observability backends, true parallel multi-round.

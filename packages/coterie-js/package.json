@@ -1,6 +1,6 @@
 {
   "name": "coterie",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A LangGraph orchestrator for heterogeneous coding agents (Claude Code, Codex, Cursor, Aider) and dev tools.",
   "license": "MIT",
   "author": "Chris King <chris@cking.me>",

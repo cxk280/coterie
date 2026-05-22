@@ -129,7 +129,7 @@ Built around the SOLID principles from the [Docker Agent Swarm talk](https://doc
 | Runtime | Package | Status |
 |---|---|---|
 | Python | [`coterie`](https://pypi.org/project/coterie/) on PyPI | ✅ All 5 modes |
-| Node / TS | [`coterie`](https://www.npmjs.com/package/coterie) on npm | ⚠️ `single` mode only (v0.1); other 4 land in v0.1.x |
+| Node / TS | [`coterie`](https://www.npmjs.com/package/coterie) on npm | ✅ All 5 modes |
 
 Both share the YAML schema at [`schemas/coterie.config.schema.json`](schemas/coterie.config.schema.json) and the same CLI UX (`coterie run "..." --config ...`). The adapter interface is the same on both sides — a Python-orchestrated team can include JS-implemented adapters via subprocess, and vice versa.
 
@@ -158,7 +158,7 @@ Set `COTERIE_LLM_PROVIDER=groq` to force a provider for a session.
 
 ## Status
 
-**Alpha — v0.1.0.** Five modes fully implemented in Python with 36 tests passing in ~0.5s (FakeAdapter + ScriptedLLMClient — no subprocesses, no API keys, no network). The Node package compiles and runs `single` mode end-to-end; the other four modes mirror over in v0.1.x.
+**Alpha — v0.1.0.** All five modes implemented in both runtimes — Python (62 tests) and TypeScript (27 tests), all using `FakeAdapter` + `ScriptedLLMClient` so the suites need no API keys, no network, and no subprocesses to run. Budget enforcement, LLM planner, workdir isolation (`IsolatedWorktreeExecutor`), HIL checkpoints via `interrupt_before`, and multi-round tournament bracket all ship in v0.1.
 
 Roadmap and known limitations: [`docs/design.md`](docs/design.md).
 

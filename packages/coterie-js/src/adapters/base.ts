@@ -1,3 +1,5 @@
+/** CLIAdapter contract. Mirrors Python's `adapters/base.py`. */
+
 import { spawnSync } from "node:child_process";
 
 export interface AdapterResult {
@@ -9,25 +11,40 @@ export interface AdapterResult {
   cost_estimate_usd: number | null;
 }
 
-export interface RunOptions {
-  timeoutMs?: number;
-  extra?: Record<string, unknown>;
+export interface CLIAdapterCtor {
+  adapterName: string;
+  new (agent_id: string, opts?: { model?: string }): CLIAdapter;
 }
 
 export abstract class CLIAdapter {
-  readonly agent_id: string;
-  readonly model: string | undefined;
+  static readonly adapterName: string;
 
-  constructor(agent_id: string, opts: { model?: string } = {}) {
-    this.agent_id = agent_id;
-    this.model = opts.model;
+  constructor(
+    public readonly agent_id: string,
+    public readonly opts: { model?: string } = {},
+  ) {}
+
+  get model(): string | undefined {
+    return this.opts.model;
   }
 
-  abstract buildCommand(prompt: string, workdir: string, extra: Record<string, unknown>): string[];
+  abstract buildCommand(
+    prompt: string,
+    workdir: string,
+    extra: Record<string, unknown>,
+  ): string[];
 
-  abstract parseResult(stdout: string, stderr: string, exitCode: number): AdapterResult;
+  abstract parseResult(
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+  ): AdapterResult;
 
-  run(prompt: string, workdir: string, opts: RunOptions = {}): AdapterResult {
+  run(
+    prompt: string,
+    workdir: string,
+    opts: { timeoutMs?: number; extra?: Record<string, unknown> } = {},
+  ): AdapterResult {
     const argv = this.buildCommand(prompt, workdir, opts.extra ?? {});
     const [cmd, ...args] = argv;
     if (!cmd) throw new Error(`Adapter ${this.agent_id} produced an empty command`);
@@ -37,7 +54,11 @@ export abstract class CLIAdapter {
       encoding: "utf8",
       timeout: opts.timeoutMs ?? 600_000,
     });
-    const result = this.parseResult(proc.stdout ?? "", proc.stderr ?? "", proc.status ?? 1);
+    const result = this.parseResult(
+      proc.stdout ?? "",
+      proc.stderr ?? "",
+      proc.status ?? 1,
+    );
     result.duration_s = (Date.now() - t0) / 1000;
     return result;
   }
