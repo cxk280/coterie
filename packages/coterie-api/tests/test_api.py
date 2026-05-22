@@ -1,0 +1,128 @@
+"""End-to-end smoke tests for coterie-api.
+
+Run with:
+    cd packages/coterie-py && .venv/bin/pytest ../coterie-api/tests/ -v
+
+Uses an in-memory store (override COTERIE_DB_PATH per test) so it doesn't touch
+the user's real ~/.coterie/runs.sqlite.
+"""
+
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client(tmp_path):
+    os.environ["COTERIE_DB_PATH"] = str(tmp_path / "test.sqlite")
+    os.environ["COTERIE_API_TOKEN_PATH"] = str(tmp_path / "token")
+    os.environ["COTERIE_RUN_TTL_DAYS"] = "0"  # disable cleanup loop
+    from coterie_api.auth import _cached
+    import coterie_api.auth as auth_mod
+    auth_mod._cached = None
+    from coterie_api.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def auth(client):
+    from coterie_api.auth import current_token
+    return {"Authorization": f"Bearer {current_token()}"}
+
+
+def test_health_is_unauth(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_modes_requires_auth(client):
+    # TestClient host is "testclient" — not localhost — so auth applies.
+    r = client.get("/api/modes")
+    assert r.status_code == 401
+
+
+def test_modes_authenticated(client):
+    r = client.get("/api/modes", headers=auth(client))
+    assert r.status_code == 200
+    assert set(r.json()) == {"single", "consensus", "adversarial", "debate", "tournament"}
+
+
+def test_query_string_token_for_sse(client):
+    from coterie_api.auth import current_token
+    r = client.get(f"/api/modes?token={current_token()}")
+    assert r.status_code == 200
+
+
+def test_runs_pagination(client):
+    r = client.get("/api/runs?limit=10", headers=auth(client))
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["limit"] == 10
+    assert payload["offset"] == 0
+    assert isinstance(payload["items"], list)
+    assert "total" in payload
+
+
+def test_delete_missing_run_returns_404(client):
+    r = client.delete("/api/runs/nope", headers=auth(client))
+    assert r.status_code == 404
+
+
+def test_resume_missing_run_returns_404(client):
+    r = client.post(
+        "/api/runs/nope/resume",
+        headers=auth(client),
+        json={"decision": "approve"},
+    )
+    assert r.status_code == 404
+
+
+def test_token_rotate(client):
+    h = auth(client)
+    before = client.get("/api/auth/token", headers=h).json()["token"]
+    after = client.post("/api/auth/rotate", headers=h).json()["token"]
+    assert before != after
+    # The old header should now fail.
+    r = client.get("/api/modes", headers=h)
+    assert r.status_code == 401
+
+
+def test_create_run_with_fake_adapter(client):
+    """Smoke: kick off a run with the fake adapter (no API key needed) and let it complete."""
+    import time
+    from coterie.adapters.base import AdapterResult
+    from coterie.adapters.fake import FakeAdapter
+
+    FakeAdapter.reset_all()
+    FakeAdapter.script("a", [AdapterResult("hi", "", 0, cost_estimate_usd=0.01)])
+
+    cfg = {
+        "version": 1,
+        "agents": [{"id": "a", "adapter": "fake"}],
+        "router": {"enabled": False},
+    }
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={"task": "say hi", "mode": "single", "config": cfg},
+    )
+    assert r.status_code == 200, r.text
+    run_id = r.json()["id"]
+
+    # Poll until terminal.
+    for _ in range(50):
+        r = client.get(f"/api/runs/{run_id}", headers=auth(client))
+        if r.json()["summary"]["status"] in ("done", "failed"):
+            break
+        time.sleep(0.1)
+
+    detail = r.json()
+    assert detail["summary"]["status"] == "done"
+    assert detail["summary"]["spend_usd"] == pytest.approx(0.01, rel=1e-3)
+    assert len(detail["runs"]) == 1
+    assert detail["runs"][0]["agent_id"] == "a"
