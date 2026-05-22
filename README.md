@@ -112,17 +112,10 @@ See [`examples/`](examples/) for one config per mode and [`docs/modes.md`](docs/
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Built around the SOLID principles from the [Docker Agent Swarm talk](https://docker-agent-swarm-slides.netlify.app/) — see [`docs/solid-checklist.md`](docs/solid-checklist.md) for the contributor self-review. The two-implementations-of-one-abstraction discipline is what makes the v0.2 `DockerSwarmExecutor` a one-commit diff: the executor seam is already there.
-
-## SOLID at a glance
-
-| Principle | Where it shows up in Coterie |
-|---|---|
-| **S**ingle Responsibility | `CLIAdapter` is two abstract methods; `LLMClient` is one method (`chat`); each mode module wires one graph topology. |
-| **O**pen / Closed | Add an adapter or mode by writing a new file + a decorator. Registry files are never edited. |
-| **L**iskov | Graph nodes consume `LLMClient` (ABC) and `AdapterExecutor` (Protocol). Swap concretes freely. |
-| **I**nterface Segregation | One method per ABC. Streaming / embeddings would be sibling ABCs, not bolt-ons. |
-| **D**ependency Inversion | `cli.py` is the only composition root. `grep "import anthropic\|import openai" modes/ nodes/` returns zero. |
+Two implementations behind every abstraction (`AdapterExecutor` →
+`LocalSubprocessExecutor` + `IsolatedWorktreeExecutor`, `LLMClient` → five
+concretes including `ScriptedLLMClient`) keep the seams testable and make
+the v0.2 `DockerSwarmExecutor` a one-commit diff.
 
 ## Two runtimes
 
@@ -164,7 +157,7 @@ Roadmap and known limitations: [`docs/design.md`](docs/design.md).
 
 ## Tests run without API keys
 
-Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). Slide 20 of the deck: the same Protocol that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.
+Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). The same `Protocol` that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.
 
 ```bash
 cd packages/coterie-py && pytest -v

@@ -16,7 +16,7 @@ LangGraph is plumbing, not opinion. We use:
 
 CrewAI / AutoGen / OpenAI Agents SDK each ship opinionated "agent" abstractions on top of model APIs. That's the wrong layer for Coterie — our agents *are* subprocess-wrapped CLIs, not in-process LLM calls. LangGraph leaves the agent surface to us.
 
-Slide 24 of the SOLID Agent Swarms deck: "Use frameworks for what they're good at." LangGraph is good at typed-state DAG orchestration. That's what we needed.
+Use frameworks for what they're good at. LangGraph is good at typed-state DAG orchestration. That's what we needed.
 
 ## 2. The composition root pattern
 
@@ -62,15 +62,15 @@ Clusters are produced by an LLM. The engine prompt instructs strict clustering: 
 
 ## 6. v0.2 roadmap
 
-- **DockerSwarmExecutor** — concrete third implementation of `AdapterExecutor` (after `LocalSubprocessExecutor` and `IsolatedWorktreeExecutor`). Each fan-out branch gets its own container with the workdir bind-mounted; solves the production-isolation gap (`IsolatedWorktreeExecutor` already solves the local collision problem). Slide 18–19 of the deck.
+- **DockerSwarmExecutor** — concrete third implementation of `AdapterExecutor` (after `LocalSubprocessExecutor` and `IsolatedWorktreeExecutor`). Each fan-out branch gets its own container with the workdir bind-mounted; solves the production-isolation gap (`IsolatedWorktreeExecutor` already solves the local collision problem).
 - **HIL TUI** — v0.1 ships inline `rich.prompt` confirmations. v0.2 adds a full-screen `textual` (Python) / `ink` (Node) TUI showing live state.
-- **Observability** — Langfuse first (MIT, self-hostable); LangSmith as a config option. File-backed JSONL by default. See slide 25's gotcha list.
+- **Observability** — Langfuse first (MIT, self-hostable); LangSmith as a config option. File-backed JSONL by default.
 - **True parallel multi-round tournament** — current implementation eliminates losers across rounds but each re-entry runs participants sequentially due to LangGraph state delivery semantics. v0.2 will use `Send()` to keep rounds fully parallel.
 - **LLM-driven planner depth** — v0.1's planner generates flat subtask lists. v0.2 will support nested decomposition (tasks with sub-subtasks) and dependency graphs.
 
 ## 7. Sandboxing posture (parking)
 
-The deck flags the Docker-socket-mount-is-root-equivalent risk (slide 25). Coterie inherits this risk if/when we ship `DockerSwarmExecutor`. Options:
+Docker-socket bind-mount is root-equivalent — Coterie inherits this risk if/when we ship `DockerSwarmExecutor`. Options:
 
 - `sandbox: none` — current. Trust the prompt.
 - `sandbox: workdir` — strip credential env vars before spawning.

@@ -1,9 +1,6 @@
 # SOLID Self-Review Checklist
 
-From slide 23 of [SOLID Agent Swarms](https://docker-agent-swarm-slides.netlify.app/),
-adapted to Coterie and used as a contributor checklist.
-
-When you add a new adapter, mode, or LLM provider, this is the review gate.
+Contributor checklist. When you add a new adapter, mode, or LLM provider, this is the review gate.
 
 ---
 
