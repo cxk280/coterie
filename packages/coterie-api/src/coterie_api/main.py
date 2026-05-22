@@ -45,6 +45,7 @@ from coterie_api.runner import Runner
 from coterie_api.store import Store, cutoff_for
 
 TTL_DAYS = int(os.environ.get("COTERIE_RUN_TTL_DAYS", "30"))
+EVENT_TTL_DAYS = int(os.environ.get("COTERIE_EVENT_TTL_DAYS", "7"))
 CLEANUP_INTERVAL_S = int(os.environ.get("COTERIE_CLEANUP_INTERVAL_S", "3600"))
 
 
@@ -53,9 +54,12 @@ async def lifespan(app: FastAPI):
     db = Path(os.environ.get("COTERIE_DB_PATH", Path.home() / ".coterie" / "runs.sqlite"))
     app.state.store = Store(db)
     app.state.runner = Runner(app.state.store)
+    restored = app.state.runner.restore_paused_handles()
+    if restored:
+        print(f"coterie-api: restored {restored} paused run handle(s) on startup")
 
     cleanup_task: asyncio.Task | None = None
-    if TTL_DAYS > 0:
+    if TTL_DAYS > 0 or EVENT_TTL_DAYS > 0:
         cleanup_task = asyncio.create_task(_cleanup_loop(app.state.store))
 
     try:
@@ -72,10 +76,16 @@ async def lifespan(app: FastAPI):
 async def _cleanup_loop(store: Store) -> None:
     while True:
         try:
-            cutoff = cutoff_for(TTL_DAYS)
-            removed = store.delete_runs_older_than(cutoff)
-            if removed:
-                print(f"coterie-api: cleaned up {removed} runs older than {TTL_DAYS}d")
+            if TTL_DAYS > 0:
+                cutoff = cutoff_for(TTL_DAYS)
+                removed = store.delete_runs_older_than(cutoff)
+                if removed:
+                    print(f"coterie-api: cleaned up {removed} runs older than {TTL_DAYS}d")
+            if EVENT_TTL_DAYS > 0:
+                ev_cutoff = cutoff_for(EVENT_TTL_DAYS)
+                ev_removed = store.delete_events_older_than(ev_cutoff)
+                if ev_removed:
+                    print(f"coterie-api: pruned {ev_removed} events older than {EVENT_TTL_DAYS}d")
         except Exception as e:  # noqa: BLE001
             print(f"coterie-api: cleanup error: {e}")
         await asyncio.sleep(CLEANUP_INTERVAL_S)
@@ -128,9 +138,11 @@ async def create_run(req: CreateRunRequest) -> RunSummary:
 async def list_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    mode: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
 ) -> RunListResponse:
-    rows = app.state.store.list_runs(limit=limit, offset=offset)
-    total = app.state.store.count_runs()
+    rows = app.state.store.list_runs(limit=limit, offset=offset, mode=mode, status=status)
+    total = app.state.store.count_runs(mode=mode, status=status)
     return RunListResponse(
         items=[_to_summary(r) for r in rows],
         total=total,
@@ -163,6 +175,15 @@ async def delete_run(run_id: str) -> dict[str, str]:
     if not ok:
         raise HTTPException(404, f"run {run_id} not found")
     return {"status": "deleted", "id": run_id}
+
+
+@app.post("/api/runs/{run_id}/compact", dependencies=[Depends(auth_required)])
+async def compact_run(run_id: str) -> dict[str, int | str]:
+    run = app.state.store.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    removed = app.state.store.compact_events(run_id)
+    return {"id": run_id, "events_removed": removed}
 
 
 @app.post("/api/runs/{run_id}/resume", dependencies=[Depends(auth_required)])

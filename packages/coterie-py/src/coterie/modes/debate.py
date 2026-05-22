@@ -93,6 +93,7 @@ def build(
     config: dict,
     moderator_llm: LLMClient | None = None,
     judge_llm: LLMClient | None = None,
+    checkpointer=None,
     **_,
 ):
     deb = config.get("debate") or {}
@@ -138,4 +139,4 @@ def build(
     g.add_conditional_edges("moderator", loop_or_judge, {"pro": "pro", "judge": "judge"})
     g.add_edge("judge", END)
 
-    return compile_with_interrupts(g, config)
+    return compile_with_interrupts(g, config, checkpointer=checkpointer)

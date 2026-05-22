@@ -16,12 +16,15 @@ streaming but not the latest known state.
 from __future__ import annotations
 
 import asyncio
+import os
+import sqlite3
 import time
 import traceback
 import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from coterie.core.executor import IsolatedWorktreeExecutor, LocalSubprocessExecutor
@@ -29,6 +32,19 @@ from coterie.graph import build_graph
 
 from coterie_api.models import Mode
 from coterie_api.store import Store
+
+CHECKPOINT_DB = Path(
+    os.environ.get("COTERIE_CHECKPOINT_DB", Path.home() / ".coterie" / "checkpoints.sqlite")
+)
+
+
+def _make_checkpointer():
+    """SqliteSaver for HIL persistence. Lazy import so the lib stays optional."""
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(CHECKPOINT_DB), check_same_thread=False)
+    return SqliteSaver(conn)
 
 
 class Runner:
@@ -38,6 +54,46 @@ class Runner:
         self._subscribers: dict[str, list[asyncio.Queue[dict[str, Any] | None]]] = {}
         self._handles: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
+        # Process-wide checkpointer so paused runs survive process restarts.
+        self._checkpointer = _make_checkpointer()
+
+    # ---------- public API ----------
+
+    def restore_paused_handles(self) -> int:
+        """Rebuild in-memory handles for runs that were paused at an HIL gate
+        before the process restarted. Returns the number restored.
+        """
+        restored = 0
+        for run in self.store.runs_in_status("awaiting_human"):
+            try:
+                self._rebuild_handle(run)
+                restored += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"coterie-api: failed to restore run {run['id']}: {e}")
+        return restored
+
+    def _rebuild_handle(self, run: dict[str, Any]) -> None:
+        run_id = run["id"]
+        config = run["config"]
+        executor = (
+            IsolatedWorktreeExecutor()
+            if config.get("mode") in ("consensus", "tournament")
+            else LocalSubprocessExecutor()
+        )
+        llms = _build_llms_for(config)
+        graph = build_graph(
+            config=config,
+            workdir=".",
+            executor=executor,
+            checkpointer=self._checkpointer,
+            **llms,
+        )
+        self._handles[run_id] = {
+            "graph": graph,
+            "thread_config": {"configurable": {"thread_id": run_id}},
+            "started": time.monotonic(),
+            "config": config,
+        }
 
     # ---------- public API ----------
 
@@ -124,7 +180,13 @@ class Runner:
                 else LocalSubprocessExecutor()
             )
             llms = _build_llms_for(config)
-            graph = build_graph(config=config, workdir=".", executor=executor, **llms)
+            graph = build_graph(
+                config=config,
+                workdir=".",
+                executor=executor,
+                checkpointer=self._checkpointer,
+                **llms,
+            )
 
             initial = _initial_state(task, config)
             thread_config = {"configurable": {"thread_id": run_id}}
@@ -223,6 +285,11 @@ class Runner:
         await self._emit(run_id, "done", {"status": status, "duration_s": duration})
         await self._close_subscribers(run_id)
         self._handles.pop(run_id, None)
+        # Compact the event log so we keep only the structural events.
+        try:
+            self.store.compact_events(run_id)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _drive_graph(graph, initial, thread_config, run_id, runner: Runner, loop):

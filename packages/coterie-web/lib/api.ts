@@ -105,8 +105,15 @@ export const api = {
   health: () => get<{ status: string }>("/api/health"),
   modes: () => get<string[]>("/api/modes"),
   agents: () => get<ApiAdapter[]>("/api/agents"),
-  listRuns: (opts: { limit?: number; offset?: number } = {}) =>
-    get<ApiRunListResponse>(`/api/runs?limit=${opts.limit ?? 20}&offset=${opts.offset ?? 0}`),
+  listRuns: (opts: { limit?: number; offset?: number; mode?: string; status?: string } = {}) => {
+    const p = new URLSearchParams();
+    p.set("limit", String(opts.limit ?? 20));
+    p.set("offset", String(opts.offset ?? 0));
+    if (opts.mode) p.set("mode", opts.mode);
+    if (opts.status) p.set("status", opts.status);
+    return get<ApiRunListResponse>(`/api/runs?${p.toString()}`);
+  },
+  compactRun: (id: string) => post<{ id: string; events_removed: number }>(`/api/runs/${id}/compact`, {}),
   getRun: (id: string) => get<ApiRunDetail>(`/api/runs/${id}`),
   createRun: (body: CreateRunBody) => post<ApiRunSummary>("/api/runs", body),
   deleteRun: (id: string) => del<{ status: string; id: string }>(`/api/runs/${id}`),

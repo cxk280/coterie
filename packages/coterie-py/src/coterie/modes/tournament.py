@@ -54,6 +54,7 @@ def build(
     executor: AdapterExecutor,
     config: dict,
     judge_llm: LLMClient | None = None,
+    checkpointer=None,
     **_,
 ):
     tournament = config.get("tournament") or {}
@@ -85,4 +86,4 @@ def build(
     else:
         g.add_edge("bracket_judge", END)
 
-    return compile_with_interrupts(g, config)
+    return compile_with_interrupts(g, config, checkpointer=checkpointer)

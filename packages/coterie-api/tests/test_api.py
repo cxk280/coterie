@@ -126,3 +126,75 @@ def test_create_run_with_fake_adapter(client):
     assert detail["summary"]["spend_usd"] == pytest.approx(0.01, rel=1e-3)
     assert len(detail["runs"]) == 1
     assert detail["runs"][0]["agent_id"] == "a"
+
+
+def test_runs_filter_by_mode(client):
+    """list_runs?mode= filters by mode."""
+    import time
+    from coterie.adapters.base import AdapterResult
+    from coterie.adapters.fake import FakeAdapter
+
+    FakeAdapter.reset_all()
+    FakeAdapter.script("a", [AdapterResult("hi", "", 0, cost_estimate_usd=0.0)] * 3)
+
+    cfg = {
+        "version": 1,
+        "agents": [{"id": "a", "adapter": "fake"}],
+        "router": {"enabled": False},
+    }
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={"task": "single", "mode": "single", "config": cfg},
+    )
+    assert r.status_code == 200
+    sid = r.json()["id"]
+
+    for _ in range(50):
+        if client.get(f"/api/runs/{sid}", headers=auth(client)).json()["summary"]["status"] in ("done", "failed"):
+            break
+        time.sleep(0.1)
+
+    single = client.get("/api/runs?mode=single", headers=auth(client)).json()
+    consensus = client.get("/api/runs?mode=consensus", headers=auth(client)).json()
+    assert single["total"] >= 1
+    assert consensus["total"] == 0
+
+
+def test_compact_run_auto_runs_on_terminal(client):
+    """After a run terminates, the runner auto-compacts so a manual compact removes zero rows."""
+    import time
+    from coterie.adapters.base import AdapterResult
+    from coterie.adapters.fake import FakeAdapter
+
+    FakeAdapter.reset_all()
+    FakeAdapter.script("a", [AdapterResult("hi", "", 0, cost_estimate_usd=0.005)])
+
+    cfg = {
+        "version": 1,
+        "agents": [{"id": "a", "adapter": "fake"}],
+        "router": {"enabled": False},
+    }
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={"task": "compact me", "mode": "single", "config": cfg},
+    )
+    rid = r.json()["id"]
+
+    for _ in range(50):
+        if client.get(f"/api/runs/{rid}", headers=auth(client)).json()["summary"]["status"] in ("done", "failed"):
+            break
+        time.sleep(0.1)
+
+    r = client.post(f"/api/runs/{rid}/compact", headers=auth(client))
+    assert r.status_code == 200
+    assert r.json()["events_removed"] == 0
+
+
+def test_runner_uses_persistent_checkpointer(client):
+    """Smoke: the runner holds a SqliteSaver (not the in-memory variant)."""
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    from coterie_api.main import app
+
+    assert isinstance(app.state.runner._checkpointer, SqliteSaver)

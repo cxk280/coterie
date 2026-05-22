@@ -42,6 +42,7 @@ def build(
     executor: AdapterExecutor,
     config: dict,
     consensus_llm: LLMClient | None = None,
+    checkpointer=None,
     **_,
 ):
     cons_cfg = config.get("consensus") or {}
@@ -68,4 +69,4 @@ def build(
         g.add_edge(f"participant_{pid}", "engine")
     g.add_edge("engine", END)
 
-    return compile_with_interrupts(g, config)
+    return compile_with_interrupts(g, config, checkpointer=checkpointer)

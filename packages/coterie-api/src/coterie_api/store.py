@@ -134,17 +134,33 @@ class Store:
                 return None
             return _row_to_run(row)
 
-    def list_runs(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    def list_runs(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        *,
+        mode: str | None = None,
+        status: str | None = None,
+        owner_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where, params = _build_where(mode=mode, status=status, owner_id=owner_id)
         with self._conn() as c:
             rows = c.execute(
-                "SELECT * FROM runs ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
+                f"SELECT * FROM runs{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
             ).fetchall()
             return [_row_to_run(r) for r in rows]
 
-    def count_runs(self) -> int:
+    def count_runs(
+        self,
+        *,
+        mode: str | None = None,
+        status: str | None = None,
+        owner_id: str | None = None,
+    ) -> int:
+        where, params = _build_where(mode=mode, status=status, owner_id=owner_id)
         with self._conn() as c:
-            row = c.execute("SELECT COUNT(*) AS n FROM runs").fetchone()
+            row = c.execute(f"SELECT COUNT(*) AS n FROM runs{where}", params).fetchone()
             return int(row["n"])
 
     def delete_run(self, run_id: str) -> bool:
@@ -156,6 +172,11 @@ class Store:
         with self._conn() as c:
             cur = c.execute("DELETE FROM runs WHERE created_at < ?", (cutoff.isoformat(),))
             return cur.rowcount
+
+    def runs_in_status(self, status: str) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM runs WHERE status = ?", (status,)).fetchall()
+            return [_row_to_run(r) for r in rows]
 
     # ---------- events ----------
 
@@ -189,6 +210,37 @@ class Store:
                 for r in rows
             ]
 
+    # ---------- compaction ----------
+
+    # Kinds preserved during compaction. Everything else (spend_update, state on
+    # mid-progress chunks, stream_end sentinels, etc.) is dropped.
+    COMPACT_KEEP = frozenset({
+        "status_change",
+        "agent_run",
+        "judge_decision",
+        "checkpoint",
+        "done",
+        "error",
+    })
+
+    def compact_events(self, run_id: str) -> int:
+        """Drop noisy intermediate events; keep status changes, agent runs, judge
+        decisions, checkpoints, and terminal/error markers. Returns rows deleted.
+        """
+        keep_placeholders = ",".join("?" for _ in self.COMPACT_KEEP)
+        with self._conn() as c:
+            cur = c.execute(
+                f"DELETE FROM events WHERE run_id = ? AND kind NOT IN ({keep_placeholders})",
+                (run_id, *self.COMPACT_KEEP),
+            )
+            return cur.rowcount
+
+    def delete_events_older_than(self, cutoff: datetime) -> int:
+        """Bulk prune the event log. Run rows are untouched."""
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM events WHERE timestamp < ?", (cutoff.isoformat(),))
+            return cur.rowcount
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -196,6 +248,28 @@ def _now() -> str:
 
 def cutoff_for(days: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _build_where(
+    *,
+    mode: str | None = None,
+    status: str | None = None,
+    owner_id: str | None = None,
+) -> tuple[str, tuple[Any, ...]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if mode is not None:
+        clauses.append("mode = ?")
+        params.append(mode)
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if owner_id is not None:
+        clauses.append("owner_id = ?")
+        params.append(owner_id)
+    if not clauses:
+        return "", ()
+    return " WHERE " + " AND ".join(clauses), tuple(params)
 
 
 def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:

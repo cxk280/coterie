@@ -22,6 +22,7 @@ def build_graph(
     consensus_llm: LLMClient | None = None,
     moderator_llm: LLMClient | None = None,
     planner_llm: LLMClient | None = None,
+    checkpointer: Any | None = None,
 ):
     mode = config.get("mode")
     if not mode:
@@ -40,4 +41,5 @@ def build_graph(
         consensus_llm=consensus_llm,
         moderator_llm=moderator_llm,
         planner_llm=planner_llm,
+        checkpointer=checkpointer,
     )

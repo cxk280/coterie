@@ -34,6 +34,7 @@ def build(
     config: dict,
     supervisor_llm: LLMClient | None = None,
     planner_llm: LLMClient | None = None,
+    checkpointer=None,
     **_,
 ):
     g: StateGraph = StateGraph(CoterieState)
@@ -66,4 +67,4 @@ def build(
     g.add_conditional_edges("supervisor", route, {END: END, "agent": "agent"})
     g.add_edge("agent", "advance")
     g.add_edge("advance", "supervisor")
-    return compile_with_interrupts(g, config)
+    return compile_with_interrupts(g, config, checkpointer=checkpointer)

@@ -8,12 +8,17 @@ import { RECENT_RUNS, RUN_STATS } from "@/lib/mock-data";
 import type { RunSummary } from "@/lib/types";
 
 // Try the API; fall back to mock data if unreachable.
-async function loadRuns(limit = 20, offset = 0): Promise<{ runs: RunSummary[]; total: number }> {
+async function loadRuns(
+  limit = 20,
+  offset = 0,
+  mode?: string,
+): Promise<{ runs: RunSummary[]; total: number; usedMock: boolean }> {
   try {
-    const apiResp = await api.listRuns({ limit, offset });
-    return { runs: apiResp.items.map(toRunSummary), total: apiResp.total };
+    const apiResp = await api.listRuns({ limit, offset, mode });
+    return { runs: apiResp.items.map(toRunSummary), total: apiResp.total, usedMock: false };
   } catch {
-    return { runs: RECENT_RUNS, total: RECENT_RUNS.length };
+    const filtered = mode ? RECENT_RUNS.filter((r) => r.mode === mode) : RECENT_RUNS;
+    return { runs: filtered, total: filtered.length, usedMock: true };
   }
 }
 
@@ -56,17 +61,24 @@ const STATUS_COLOR = {
 export const dynamic = "force-dynamic";
 
 interface RunHistoryPageProps {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; mode?: string }>;
 }
 
 const PAGE_SIZE = 20;
+const ALL_MODES = ["single", "consensus", "adversarial", "debate", "tournament"] as const;
 
 export default async function RunHistoryPage({ searchParams }: RunHistoryPageProps) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, mode: modeParam } = await searchParams;
+  const mode = (ALL_MODES as readonly string[]).includes(modeParam ?? "")
+    ? (modeParam as (typeof ALL_MODES)[number])
+    : undefined;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;
-  const { runs, total } = await loadRuns(PAGE_SIZE, offset);
+  const { runs, total } = await loadRuns(PAGE_SIZE, offset, mode);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filterHref = (m?: string) => (m ? `/runs?mode=${m}` : "/runs");
+  const pageHref = (p: number) =>
+    `/runs?page=${p}${mode ? `&mode=${mode}` : ""}`;
   return (
     <div className="flex h-screen flex-col">
       <AppNav active="runs" />
@@ -95,12 +107,14 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
         </section>
 
         <section className="flex items-center gap-2">
-          <FilterChip active>all {total}</FilterChip>
-          <FilterChip>single</FilterChip>
-          <FilterChip>consensus</FilterChip>
-          <FilterChip>adversarial</FilterChip>
-          <FilterChip>debate</FilterChip>
-          <FilterChip>tournament</FilterChip>
+          <FilterChip active={!mode} href={filterHref()}>
+            all {total}
+          </FilterChip>
+          {ALL_MODES.map((m) => (
+            <FilterChip key={m} active={mode === m} href={filterHref(m)}>
+              {m}
+            </FilterChip>
+          ))}
           <div className="flex-1" />
           <div
             className="flex w-72 items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
@@ -182,7 +196,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
           <nav className="flex items-center justify-center gap-2 pt-2 text-xs">
             {page > 1 && (
               <Link
-                href={`/runs?page=${page - 1}`}
+                href={pageHref(page - 1)}
                 className="rounded-md border px-3 py-1.5 font-medium"
                 style={{
                   background: "var(--color-bg-surface)",
@@ -198,7 +212,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
             </span>
             {page < totalPages && (
               <Link
-                href={`/runs?page=${page + 1}`}
+                href={pageHref(page + 1)}
                 className="rounded-md border px-3 py-1.5 font-medium"
                 style={{
                   background: "var(--color-bg-surface)",
@@ -246,10 +260,19 @@ function StatCard({
   );
 }
 
-function FilterChip({ active, children }: { active?: boolean; children: React.ReactNode }) {
+function FilterChip({
+  active,
+  href,
+  children,
+}: {
+  active?: boolean;
+  href: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span
-      className="cursor-pointer rounded-md border px-2.5 py-1.5 text-xs font-medium"
+    <Link
+      href={href}
+      className="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:opacity-90"
       style={{
         background: active ? "var(--color-bg-raised)" : "var(--color-bg-surface)",
         borderColor: active ? "var(--color-text-secondary)" : "var(--color-border-subtle)",
@@ -257,6 +280,6 @@ function FilterChip({ active, children }: { active?: boolean; children: React.Re
       }}
     >
       {children}
-    </span>
+    </Link>
   );
 }

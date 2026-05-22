@@ -42,6 +42,7 @@ def build(
     executor: AdapterExecutor,
     config: dict,
     judge_llm: LLMClient | None = None,
+    checkpointer=None,
     **_,
 ):
     adv = config.get("adversarial") or {}
@@ -88,4 +89,4 @@ def build(
         "judge", route_from_judge, {END: END, "implementer": "implementer"}
     )
 
-    return compile_with_interrupts(g, config)
+    return compile_with_interrupts(g, config, checkpointer=checkpointer)
