@@ -32,6 +32,10 @@ def make_supervisor_node(llm: LLMClient | None = None):
     """Build the supervisor node. `llm` is required when strategy='llm' (default)."""
 
     def supervisor(state: CoterieState) -> dict[str, Any]:
+        # Preserve terminal statuses.
+        if state.get("status") in ("failed", "awaiting_human"):
+            return {}
+
         plan = state.get("plan") or []
         idx = state.get("current_step_idx", 0)
         if idx >= len(plan):
@@ -92,9 +96,12 @@ def make_step_advance_node():
     """A trivial node that increments `current_step_idx` after a single agent runs.
 
     Lives here instead of in `single.py` so the graph wiring stays tight.
+    Preserves terminal statuses (failed, awaiting_human) instead of overwriting.
     """
 
     def advance(state: CoterieState) -> dict[str, Any]:
+        if state.get("status") in ("failed", "awaiting_human"):
+            return {}
         return {"current_step_idx": state.get("current_step_idx", 0) + 1, "status": "routing"}
 
     return advance

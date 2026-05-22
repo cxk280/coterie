@@ -43,7 +43,8 @@ def build(
     g.add_edge("planner", "supervisor")
 
     def route(state: CoterieState):
-        if state.get("status") == "done":
+        # Terminal statuses (budget halt, HIL block) end the graph immediately.
+        if state.get("status") in ("done", "failed", "awaiting_human"):
             return END
         idx = state.get("current_step_idx", 0)
         plan = state.get("plan") or []
