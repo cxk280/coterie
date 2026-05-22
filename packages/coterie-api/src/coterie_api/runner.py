@@ -1,14 +1,16 @@
 """Background run executor.
 
-Bridges the FastAPI server to the Python coterie graph runner. Each new run:
+Each new run:
 1. Inserts a row in the store.
-2. Schedules an asyncio task that invokes the graph in a thread (LangGraph is sync).
-3. Streams events (node_start, node_end, spend_update, status_change, …) into the
-   store as the graph progresses, and through an asyncio.Queue for live SSE clients.
+2. Schedules an asyncio task that invokes the graph in a worker thread.
+3. Streams events (`state`, `agent_run`, `spend_update`, `status_change`,
+   `checkpoint`, `judge_decision`, `done`, `error`) into the store as the graph
+   progresses.
 
-The run-id maps to an `asyncio.Queue` so multiple SSE subscribers see the same
-sequence. New subscribers receive the full history first (replayed from the store),
-then live events from the queue.
+The compiled graph + LangGraph thread config is held in-memory per run_id so
+HIL `resume` can re-enter `graph.invoke(None, config=...)` after an interrupt.
+State snapshots are persisted on every chunk so a process restart loses
+streaming but not the latest known state.
 """
 
 from __future__ import annotations
@@ -30,35 +32,44 @@ from coterie_api.store import Store
 
 
 class Runner:
-    """Process-wide singleton that owns runtimes and event queues."""
-
     def __init__(self, store: Store) -> None:
         self.store = store
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="coterie-run")
-        # run_id -> list of subscriber queues (broadcast)
         self._subscribers: dict[str, list[asyncio.Queue[dict[str, Any] | None]]] = {}
+        self._handles: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
     # ---------- public API ----------
 
     async def create_run(self, *, task: str, mode: Mode, config: dict[str, Any]) -> str:
         run_id = uuid.uuid4().hex[:12]
-        # Force the configured mode in case the client lied.
         config = {**config, "mode": mode}
         self.store.insert_run(run_id, task, mode, config)
         self._subscribers[run_id] = []
-
-        # Kick off the run as a background task. We don't await it here.
         asyncio.create_task(self._run(run_id, task, config))
         return run_id
 
-    async def subscribe(self, run_id: str) -> AsyncIterator[dict[str, Any]]:
-        """Yield existing events first, then live events as they arrive.
+    async def resume_run(self, run_id: str, *, approve: bool) -> bool:
+        handle = self._handles.get(run_id)
+        if handle is None:
+            return False
 
-        Sends a final `{"kind": "stream_end"}` sentinel and returns when the run
-        reaches a terminal state.
-        """
-        # Replay history from the store.
+        if not approve:
+            self.store.update_run_status(
+                run_id, "rejected", status_reason="user rejected at HIL checkpoint"
+            )
+            await self._emit(run_id, "status_change", {"status": "rejected"})
+            await self._emit(run_id, "done", {"status": "rejected"})
+            await self._close_subscribers(run_id)
+            self._handles.pop(run_id, None)
+            return True
+
+        self.store.update_run_status(run_id, "running", status_reason=None)
+        await self._emit(run_id, "status_change", {"status": "running"})
+        asyncio.create_task(self._resume(run_id, handle))
+        return True
+
+    async def subscribe(self, run_id: str) -> AsyncIterator[dict[str, Any]]:
         for ev in self.store.list_events(run_id):
             yield ev
 
@@ -107,74 +118,129 @@ class Runner:
             self.store.update_run_status(run_id, "running")
             await self._emit(run_id, "status_change", {"status": "running"})
 
-            # Picks executor identically to the CLI composition root.
             executor = (
                 IsolatedWorktreeExecutor()
                 if config.get("mode") in ("consensus", "tournament")
                 else LocalSubprocessExecutor()
             )
-
-            # Build LLM clients lazily — only what the mode needs.
             llms = _build_llms_for(config)
-
             graph = build_graph(config=config, workdir=".", executor=executor, **llms)
 
-            initial = {
-                "task": task,
-                "mode": config["mode"],
-                "plan": [],
-                "current_step_idx": 0,
-                "runs": [],
-                "artifacts": {},
-                "status": "planning",
+            initial = _initial_state(task, config)
+            thread_config = {"configurable": {"thread_id": run_id}}
+
+            self._handles[run_id] = {
+                "graph": graph,
+                "thread_config": thread_config,
+                "started": started,
                 "config": config,
-                "spend_usd": 0.0,
-                "route_history": [],
-                "judge_history": [],
-                "next_agent": None,
-                "mode_state": {},
             }
 
-            # LangGraph stream gives us progress events. Run in a thread so the
-            # asyncio loop can keep serving subscribers.
             final = await loop.run_in_executor(
                 self._executor,
-                _invoke_with_events,
+                _drive_graph,
                 graph,
                 initial,
+                thread_config,
                 run_id,
                 self,
                 loop,
             )
 
-            duration = time.monotonic() - started
-            self.store.update_run_status(
-                run_id,
-                "done" if final.get("status") == "done" else "failed",
-                spend_usd=final.get("spend_usd", 0.0),
-                duration_s=duration,
-                final_state=final,
-                status_reason=None,
-            )
-            await self._emit(run_id, "done", {"status": final.get("status"), "duration_s": duration})
+            await self._finalize_or_pause(run_id, final, started, graph, thread_config)
 
-        except Exception as e:  # noqa: BLE001 — propagate to client
+        except Exception as e:  # noqa: BLE001
             self.store.update_run_status(run_id, "failed", status_reason=str(e))
             await self._emit(run_id, "error", {"message": str(e), "traceback": traceback.format_exc()})
-        finally:
+            await self._emit(run_id, "done", {"status": "failed"})
             await self._close_subscribers(run_id)
+            self._handles.pop(run_id, None)
+
+    async def _resume(self, run_id: str, handle: dict[str, Any]) -> None:
+        loop = asyncio.get_running_loop()
+        graph = handle["graph"]
+        thread_config = handle["thread_config"]
+        started = handle["started"]
+        try:
+            final = await loop.run_in_executor(
+                self._executor,
+                _drive_graph,
+                graph,
+                None,
+                thread_config,
+                run_id,
+                self,
+                loop,
+            )
+            await self._finalize_or_pause(run_id, final, started, graph, thread_config)
+        except Exception as e:  # noqa: BLE001
+            self.store.update_run_status(run_id, "failed", status_reason=str(e))
+            await self._emit(run_id, "error", {"message": str(e), "traceback": traceback.format_exc()})
+            await self._emit(run_id, "done", {"status": "failed"})
+            await self._close_subscribers(run_id)
+            self._handles.pop(run_id, None)
+
+    async def _finalize_or_pause(
+        self,
+        run_id: str,
+        final: dict[str, Any],
+        started: float,
+        graph: Any,
+        thread_config: dict[str, Any],
+    ) -> None:
+        try:
+            state_info = graph.get_state(thread_config)
+            next_nodes = list(state_info.next or [])
+        except Exception:
+            next_nodes = []
+
+        if next_nodes:
+            self.store.update_run_status(
+                run_id,
+                "awaiting_human",
+                spend_usd=final.get("spend_usd", 0.0),
+                current_state=_snapshot(final),
+                status_reason=f"paused before: {', '.join(next_nodes)}",
+            )
+            await self._emit(
+                run_id,
+                "checkpoint",
+                {"next_nodes": next_nodes, "state": _snapshot(final)},
+            )
+            await self._emit(run_id, "status_change", {"status": "awaiting_human"})
+            return
+
+        duration = time.monotonic() - started
+        status = "done" if final.get("status") == "done" else "failed"
+        self.store.update_run_status(
+            run_id,
+            status,
+            spend_usd=final.get("spend_usd", 0.0),
+            duration_s=duration,
+            final_state=_snapshot(final),
+            current_state=_snapshot(final),
+        )
+        await self._emit(run_id, "done", {"status": status, "duration_s": duration})
+        await self._close_subscribers(run_id)
+        self._handles.pop(run_id, None)
 
 
-def _invoke_with_events(graph, initial, run_id: str, runner: Runner, loop):
-    """Sync wrapper: stream the graph in the thread, emit events back through asyncio."""
+def _drive_graph(graph, initial, thread_config, run_id, runner: Runner, loop):
+    """Runs inside the worker thread. Emits events back via run_coroutine_threadsafe."""
     last_runs_len = 0
     last_spend = 0.0
-    final = initial
+    last_judge_len = 0
+    final = initial or {}
 
-    for chunk in graph.stream(initial, stream_mode="values"):
+    for chunk in graph.stream(initial, config=thread_config, stream_mode="values"):
         final = chunk
 
-        # Emit spend_update when it grows
+        snap = _snapshot(chunk)
+        asyncio.run_coroutine_threadsafe(
+            runner._emit(run_id, "state", {"state": snap}), loop
+        )
+        runner.store.update_current_state(run_id, snap, chunk.get("spend_usd", 0.0))
+
         new_spend = chunk.get("spend_usd", 0.0)
         if new_spend > last_spend + 1e-9:
             asyncio.run_coroutine_threadsafe(
@@ -182,7 +248,6 @@ def _invoke_with_events(graph, initial, run_id: str, runner: Runner, loop):
             )
             last_spend = new_spend
 
-        # Emit agent_run for every new entry in `runs`.
         new_runs = chunk.get("runs", [])
         for i in range(last_runs_len, len(new_runs)):
             r = new_runs[i]
@@ -203,7 +268,15 @@ def _invoke_with_events(graph, initial, run_id: str, runner: Runner, loop):
             )
         last_runs_len = len(new_runs)
 
-        # Emit status_change when it changes
+        new_judges = chunk.get("judge_history", [])
+        for i in range(last_judge_len, len(new_judges)):
+            j = new_judges[i]
+            asyncio.run_coroutine_threadsafe(
+                runner._emit(run_id, "judge_decision", j),
+                loop,
+            )
+        last_judge_len = len(new_judges)
+
         new_status = chunk.get("status")
         if new_status:
             asyncio.run_coroutine_threadsafe(
@@ -213,8 +286,42 @@ def _invoke_with_events(graph, initial, run_id: str, runner: Runner, loop):
     return final
 
 
+def _snapshot(state: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "task",
+        "mode",
+        "plan",
+        "current_step_idx",
+        "runs",
+        "status",
+        "spend_usd",
+        "route_history",
+        "judge_history",
+        "next_agent",
+        "mode_state",
+    )
+    return {k: state.get(k) for k in keys if k in state}
+
+
+def _initial_state(task: str, config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "task": task,
+        "mode": config["mode"],
+        "plan": [],
+        "current_step_idx": 0,
+        "runs": [],
+        "artifacts": {},
+        "status": "planning",
+        "config": config,
+        "spend_usd": 0.0,
+        "route_history": [],
+        "judge_history": [],
+        "next_agent": None,
+        "mode_state": {},
+    }
+
+
 def _build_llms_for(config: dict[str, Any]) -> dict[str, Any]:
-    """Mirror cli.py's `_build_llms` logic, server-side."""
     from coterie_api.providers import build_llm
 
     mode = config.get("mode")

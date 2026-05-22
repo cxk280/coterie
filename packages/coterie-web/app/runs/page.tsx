@@ -8,12 +8,12 @@ import { RECENT_RUNS, RUN_STATS } from "@/lib/mock-data";
 import type { RunSummary } from "@/lib/types";
 
 // Try the API; fall back to mock data if unreachable.
-async function loadRuns(): Promise<RunSummary[]> {
+async function loadRuns(limit = 20, offset = 0): Promise<{ runs: RunSummary[]; total: number }> {
   try {
-    const apiRuns = await api.listRuns();
-    return apiRuns.map(toRunSummary);
+    const apiResp = await api.listRuns({ limit, offset });
+    return { runs: apiResp.items.map(toRunSummary), total: apiResp.total };
   } catch {
-    return RECENT_RUNS;
+    return { runs: RECENT_RUNS, total: RECENT_RUNS.length };
   }
 }
 
@@ -55,8 +55,18 @@ const STATUS_COLOR = {
 
 export const dynamic = "force-dynamic";
 
-export default async function RunHistoryPage() {
-  const runs = await loadRuns();
+interface RunHistoryPageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+const PAGE_SIZE = 20;
+
+export default async function RunHistoryPage({ searchParams }: RunHistoryPageProps) {
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const { runs, total } = await loadRuns(PAGE_SIZE, offset);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return (
     <div className="flex h-screen flex-col">
       <AppNav active="runs" />
@@ -85,7 +95,7 @@ export default async function RunHistoryPage() {
         </section>
 
         <section className="flex items-center gap-2">
-          <FilterChip active>all {runs.length}</FilterChip>
+          <FilterChip active>all {total}</FilterChip>
           <FilterChip>single</FilterChip>
           <FilterChip>consensus</FilterChip>
           <FilterChip>adversarial</FilterChip>
@@ -167,6 +177,40 @@ export default async function RunHistoryPage() {
             </Link>
           ))}
         </section>
+
+        {totalPages > 1 && (
+          <nav className="flex items-center justify-center gap-2 pt-2 text-xs">
+            {page > 1 && (
+              <Link
+                href={`/runs?page=${page - 1}`}
+                className="rounded-md border px-3 py-1.5 font-medium"
+                style={{
+                  background: "var(--color-bg-surface)",
+                  borderColor: "var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                ‹ Prev
+              </Link>
+            )}
+            <span style={{ color: "var(--color-text-tertiary)" }}>
+              Page {page} of {totalPages} · {total} total
+            </span>
+            {page < totalPages && (
+              <Link
+                href={`/runs?page=${page + 1}`}
+                className="rounded-md border px-3 py-1.5 font-medium"
+                style={{
+                  background: "var(--color-bg-surface)",
+                  borderColor: "var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                Next ›
+              </Link>
+            )}
+          </nav>
+        )}
       </main>
     </div>
   );

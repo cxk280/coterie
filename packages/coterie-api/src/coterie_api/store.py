@@ -1,13 +1,13 @@
 """SQLite-backed persistence for runs and events.
 
-stdlib only — no SQLAlchemy. The schema is intentionally narrow.
+stdlib only — no SQLAlchemy. Schema is intentionally narrow.
 """
 
 import json
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS runs (
     status TEXT NOT NULL,
     status_reason TEXT,
     config_json TEXT NOT NULL,
+    current_state_json TEXT,
     final_state_json TEXT,
     spend_usd REAL NOT NULL DEFAULT 0,
     duration_s REAL,
@@ -44,6 +45,13 @@ CREATE INDEX IF NOT EXISTS idx_events_run_seq ON events (run_id, seq);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent column adds for older DBs."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    if "current_state_json" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN current_state_json TEXT;")
+
+
 class Store:
     """Thread-safe SQLite wrapper. One Store per process."""
 
@@ -53,6 +61,7 @@ class Store:
         self._lock = threading.RLock()
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            _migrate(conn)
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -85,6 +94,7 @@ class Store:
         spend_usd: float | None = None,
         duration_s: float | None = None,
         final_state: dict[str, Any] | None = None,
+        current_state: dict[str, Any] | None = None,
     ) -> None:
         now = _now()
         sets = ["status = ?", "updated_at = ?"]
@@ -101,9 +111,21 @@ class Store:
         if final_state is not None:
             sets.append("final_state_json = ?")
             params.append(json.dumps(final_state, default=str))
+        if current_state is not None:
+            sets.append("current_state_json = ?")
+            params.append(json.dumps(current_state, default=str))
         params.append(run_id)
         with self._conn() as c:
             c.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", params)
+
+    def update_current_state(self, run_id: str, current_state: dict[str, Any], spend_usd: float) -> None:
+        """Cheap path: only the per-chunk state snapshot + spend."""
+        now = _now()
+        with self._conn() as c:
+            c.execute(
+                "UPDATE runs SET current_state_json = ?, spend_usd = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(current_state, default=str), spend_usd, now, run_id),
+            )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self._conn() as c:
@@ -112,17 +134,32 @@ class Store:
                 return None
             return _row_to_run(row)
 
-    def list_runs(self, limit: int = 100) -> list[dict[str, Any]]:
+    def list_runs(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         with self._conn() as c:
             rows = c.execute(
-                "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM runs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
             ).fetchall()
             return [_row_to_run(r) for r in rows]
+
+    def count_runs(self) -> int:
+        with self._conn() as c:
+            row = c.execute("SELECT COUNT(*) AS n FROM runs").fetchone()
+            return int(row["n"])
+
+    def delete_run(self, run_id: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+            return cur.rowcount > 0
+
+    def delete_runs_older_than(self, cutoff: datetime) -> int:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM runs WHERE created_at < ?", (cutoff.isoformat(),))
+            return cur.rowcount
 
     # ---------- events ----------
 
     def append_event(self, run_id: str, kind: str, data: dict[str, Any]) -> int:
-        """Append an event. Returns the new sequence number."""
         with self._conn() as c:
             row = c.execute(
                 "SELECT COALESCE(MAX(seq), -1) AS max_seq FROM events WHERE run_id = ?",
@@ -157,6 +194,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def cutoff_for(days: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
 def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -165,6 +206,7 @@ def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "status_reason": row["status_reason"],
         "config": json.loads(row["config_json"]),
+        "current_state": json.loads(row["current_state_json"]) if row["current_state_json"] else None,
         "final_state": json.loads(row["final_state_json"]) if row["final_state_json"] else None,
         "spend_usd": row["spend_usd"],
         "duration_s": row["duration_s"],
