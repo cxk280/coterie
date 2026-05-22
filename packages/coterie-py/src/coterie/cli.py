@@ -14,7 +14,7 @@ import click
 from rich.console import Console
 
 from coterie.config import load_config
-from coterie.core.executor import LocalSubprocessExecutor
+from coterie.core.executor import AdapterExecutor, IsolatedWorktreeExecutor, LocalSubprocessExecutor
 from coterie.core.llm.base import LLMClient
 from coterie.graph import build_graph
 
@@ -88,6 +88,24 @@ def _planner_enabled(cfg: dict) -> bool:
     return bool((cfg.get("planner") or {}).get("enabled"))
 
 
+def _build_executor(cfg: dict) -> AdapterExecutor:
+    """Pick an executor based on mode + explicit config.
+
+    Parallel modes (consensus, tournament) default to `IsolatedWorktreeExecutor`
+    so sibling agents don't clobber each other's edits. Single, adversarial, and
+    debate run sequentially and share the workdir by default. Override with
+    `executor.kind: local | isolated` in the YAML config.
+    """
+    explicit = (cfg.get("executor") or {}).get("kind")
+    if explicit == "local":
+        return LocalSubprocessExecutor()
+    if explicit == "isolated":
+        return IsolatedWorktreeExecutor()
+    if cfg.get("mode") in ("consensus", "tournament"):
+        return IsolatedWorktreeExecutor()
+    return LocalSubprocessExecutor()
+
+
 def _build_llms(cfg: dict) -> dict[str, Optional[LLMClient]]:
     """Build per-role LLMs. None entries mean 'this role isn't needed for the chosen mode'."""
     return {
@@ -116,7 +134,7 @@ def run(task: str, config_path: str, workdir: str) -> None:
     cfg = load_config(config_path)
     mode = cfg["mode"]
 
-    executor = LocalSubprocessExecutor()
+    executor = _build_executor(cfg)
     llms = _build_llms(cfg)
     graph = build_graph(config=cfg, workdir=workdir, executor=executor, **llms)
 

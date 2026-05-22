@@ -57,6 +57,18 @@
         "max_subtasks": {"type": "integer", "minimum": 1, "default": 5}
       }
     },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Adapter execution strategy. Default: `local` for sequential modes (single, adversarial, debate), `isolated` for parallel modes (consensus, tournament). Override here if needed.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["local", "isolated"],
+          "description": "`local`: shared workdir across all calls. `isolated`: each call gets an ephemeral git worktree (or tempdir fallback)."
+        }
+      }
+    },
     "single": {
       "type": "object",
       "additionalProperties": false,
