@@ -158,6 +158,12 @@
           "minItems": 2,
           "items": {"type": "string"}
         },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Number of elimination rounds. 1 = single N-way ranking (default). N>1 = bracket: each round halves the field via the judge until one survivor or N rounds completed."
+        },
         "judge": {
           "type": "object",
           "additionalProperties": false,
