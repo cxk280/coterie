@@ -1,7 +1,9 @@
 # Coterie
 
-> A LangGraph orchestrator for **heterogeneous coding agents** and dev tools.
-> One graph, many CLIs — Claude Code, Codex, Cursor, Aider, pytest, ruff, git — wired together with a supervisor, optional fan-out + judge, and configurable human-in-the-loop checkpoints.
+> **Multi-mode** LangGraph orchestration for **heterogeneous coding agents**.
+> Change `mode: single` to `mode: adversarial` and the same tool, the same
+> agents, and the same task now run under a completely different coordination
+> pattern. One config flag.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/badge/pypi-coterie-3776AB.svg)](https://pypi.org/project/coterie/)
@@ -10,124 +12,168 @@
 
 ---
 
-## Why Coterie
+## What's different about this
 
-Most multi-agent frameworks orchestrate *LLM API calls inside one process*. Coterie orchestrates *autonomous coding CLIs running as subprocesses*. Each CLI keeps its own model, prompt scaffolding, and tool harness — Coterie just decides who works on what, when to race them, and where the human gets a say.
+The 2026 multi-CLI orchestrator space is crowded. Every other tool gives you
+**one** coordination pattern baked in. **Coterie gives you five, switchable per
+task**:
 
-That gives you three things at once:
-
-- **The right tool for the right task.** Route refactors to Claude Code, tight diffs to Aider, algorithmic work to Codex — without rewriting any of them.
-- **Optional parallel exploration.** Toggle fan-out on for high-stakes work: two agents race, a judge picks the winner. Off by default to save tokens.
-- **Real human-in-the-loop.** YAML-driven `interrupt_before` checkpoints let you decide exactly which steps need approval — none, some, or all.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LangGraph StateGraph (with checkpointing)                  │
-│                                                              │
-│   user task                                                  │
-│      ↓                                                       │
-│   Planner ──► Supervisor ──► [routing decision]             │
-│                   ↑                                          │
-│                   │     ┌─► single agent node ──┐           │
-│                   │     │                        │           │
-│                   │     ├─► fan-out (A ∥ B) ──► Judge ──┐   │
-│                   │     │                                │   │
-│                   │     └─► tool node (pytest/ruff/git)─┤   │
-│                   │                                      │   │
-│                   └──────────── state update ◄──────────┘   │
-│                                                              │
-│   HIL interrupts hook into any node via config              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Every coding CLI is wrapped in a `CLIAdapter` — a subprocess wrapper that exposes a uniform interface (`buildCommand` / `parseResult`). Adding a new agent is a ~30-line file.
-
-## Two runtimes, one project
-
-| Runtime | Package | Install |
+| Mode | Shape | Best for |
 |---|---|---|
-| Python | [`coterie`](https://pypi.org/project/coterie/) (PyPI) | `pip install coterie` |
-| Node / TS | [`coterie`](https://www.npmjs.com/package/coterie) (npm) | `npm install coterie` |
+| `single` | supervisor routes one specialist per subtask | refactors, generic delegation |
+| `consensus` | N agents independently report; engine surfaces what they agree on | code reviews, security audits |
+| `adversarial` | **Implementer + Auditor + Judge** with refinement loop | high-stakes implementation that needs stress-testing |
+| `debate` | Pro + Con + Moderator across N rounds | design decisions, library/architecture choices |
+| `tournament` | N participants race; judge ranks | "best of N" for critical changes |
 
-Both runtimes share:
+That mode-switching capability is the headline. The honest case against the
+alternatives:
 
-- The same YAML config (validated against [`schemas/coterie.config.schema.json`](schemas/coterie.config.schema.json))
-- The same CLI UX (`coterie run "..." --config ...`)
-- The same adapter interface
+- **vs [MCO](https://github.com/mco-org/mco)** — MCO does *one* mode well: consensus. Coterie does consensus as one of five and adds the adversarial / debate patterns MCO lacks. MCO is sharper at consensus alone; Coterie is the meta-orchestrator.
+- **vs [bug-hunter](https://github.com/codexstar69/bug-hunter)** — bug-hunter is the adversarial pattern, locked to security/bug-finding. Coterie's adversarial mode is general-purpose, and is one of several available modes.
+- **vs [Tutti](https://github.com/nutthouse/tutti) / [Tessera](https://github.com/horang-labs/tessera) / [Conflux](https://github.com/tumf/conflux)** — these are coordinated workspaces for running multiple CLIs side-by-side. Coterie is a coordination *framework*; the modes are first-class.
+- **vs [RA.Aid](https://github.com/ai-christianson/RA.Aid)** — RA.Aid is one autonomous LangGraph agent. Coterie orchestrates many heterogeneous CLIs in N coordination patterns.
+- **vs [Deb8flow](https://towardsdatascience.com/deb8flow-orchestrating-autonomous-ai-debates-with-langgraph-and-gpt-4o/)** — Deb8flow does debate via in-process LLM calls. Coterie's debate mode debates between subprocess-wrapped CLIs (each runs its own model, prompt scaffolding, and tool harness).
 
-Pick whichever language you prefer. They're interoperable at the subprocess boundary — a Python-orchestrated team can include JS-implemented adapters and vice versa.
+## Why LangGraph, why subprocess CLIs
 
-## Quickstart
+Two architectural choices that don't appear together anywhere else:
+
+1. **LangGraph as the spine** — orchestration is `StateGraph` itself, not a custom thing. You get resumability, checkpointing, branch parallelism, and `interrupt_before` HIL gates for free.
+2. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor, Aider — each keeps its own model, prompt scaffolding, and tool harness. Coterie decides who runs what under which pattern. Adding a new CLI is one 30-line file.
+
+## Quick start
 
 ```bash
-# Python
 pip install coterie
-coterie run "rename `foo` to `bar` across src/ and run tests" \
-  --config examples/minimal.coterie.yaml
+coterie run "find every bug in src/auth.py" \
+  --config examples/consensus.coterie.yaml
+```
 
-# Or Node
-npm install -g coterie
-coterie run "rename `foo` to `bar` across src/ and run tests" \
-  --config examples/minimal.coterie.yaml
+Same task, different coordination:
+
+```bash
+coterie run "refactor src/auth.py to remove the legacy middleware" \
+  --config examples/adversarial.coterie.yaml
 ```
 
 A minimal config:
 
 ```yaml
-# examples/minimal.coterie.yaml
+# examples/adversarial.coterie.yaml
 version: 1
+mode: adversarial
 agents:
-  - id: claude
+  - id: implementer
     adapter: claude-code
-    strengths: [planning, refactor]
-```
-
-A more ambitious config — two agents race, a judge picks the winner, git commits are gated by human approval:
-
-```yaml
-# examples/fanout_with_judge.coterie.yaml
-version: 1
-agents:
-  - id: claude
-    adapter: claude-code
-    strengths: [planning, refactor]
-  - id: codex
+    strengths: [implementation]
+  - id: critic
     adapter: codex
-    strengths: [algorithmic, tight-diffs]
-router:
-  enabled: true
-  strategy: llm
-fanout:
-  enabled: true
-  pair: [claude, codex]
+    strengths: [adversarial-review, edge-cases]
+adversarial:
+  implementer: implementer
+  auditor: critic
   judge:
     model: claude-opus-4-7
-    criteria: [correctness, minimal-diff, tests-pass, clarity]
-checkpoints:
-  before_git_commit: true
-budget:
-  max_usd_per_task: 5.00
-  warn_at_usd: 2.00
+    sustain_threshold: medium
+  max_rounds: 3
 ```
 
-## Features
+See [`examples/`](examples/) for one config per mode and [`docs/modes.md`](docs/modes.md) for when to pick each.
 
-- **Heterogeneous adapters** — Claude Code, Codex, Cursor, Aider out of the box. `adapter: shell` lets you wrap any CLI.
-- **Supervisor routing** — a cheap router model (Haiku by default) decides which specialist handles each subtask.
-- **Toggleable fan-out + judge** — two agents race on the same task, a stronger judge picks the winner. Off by default.
-- **Configurable HIL checkpoints** — `before_planner`, `before_agent_run`, `before_judge`, `before_git_commit`, `before_pytest`, and any custom node.
-- **Budget guardrails** — set `max_usd_per_task` and `warn_at_usd`; choose `halt` / `warn` / `checkpoint` on exceed.
-- **Deterministic tool nodes** — `pytest`, `vitest`, `ruff`, `eslint`, `git`, `shell` as first-class graph nodes.
-- **Observability** — file logs by default; optional Langfuse or LangSmith integration.
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  cli.py  (composition root: picks LLM provider + executor)      │
+│     │                                                           │
+│     ▼                                                           │
+│  graph.build_graph(config, executor, supervisor_llm, …)         │
+│     │                                                           │
+│     ▼                                                           │
+│  modes/{single,consensus,adversarial,debate,tournament}.py      │
+│     │     (each builds a StateGraph; @register_mode)            │
+│     ▼                                                           │
+│  nodes/{planner,agent_runner,supervisor,auditor,…}.py           │
+│     │     (graph node factories; take LLMClient via ctor)       │
+│     ▼                                                           │
+│  adapters/{claude_code,codex,fake,…}.py                         │
+│           (CLIAdapter subclasses; @register_adapter)            │
+│                                                                 │
+│  core/                                                          │
+│    registry.py    — ADAPTER_REGISTRY, MODE_REGISTRY, decorators │
+│    llm/base.py    — LLMClient ABC (one method: chat)            │
+│    llm/anthropic_client.py, openai_compat.py, scripted.py       │
+│    executor.py    — AdapterExecutor Protocol +                  │
+│                     LocalSubprocessExecutor                     │
+│    state.py       — CoterieState + reducers                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Built around the SOLID principles from the [Docker Agent Swarm talk](https://docker-agent-swarm-slides.netlify.app/) — see [`docs/solid-checklist.md`](docs/solid-checklist.md) for the contributor self-review. The two-implementations-of-one-abstraction discipline is what makes the v0.2 `DockerSwarmExecutor` a one-commit diff: the executor seam is already there.
+
+## SOLID at a glance
+
+| Principle | Where it shows up in Coterie |
+|---|---|
+| **S**ingle Responsibility | `CLIAdapter` is two abstract methods; `LLMClient` is one method (`chat`); each mode module wires one graph topology. |
+| **O**pen / Closed | Add an adapter or mode by writing a new file + a decorator. Registry files are never edited. |
+| **L**iskov | Graph nodes consume `LLMClient` (ABC) and `AdapterExecutor` (Protocol). Swap concretes freely. |
+| **I**nterface Segregation | One method per ABC. Streaming / embeddings would be sibling ABCs, not bolt-ons. |
+| **D**ependency Inversion | `cli.py` is the only composition root. `grep "import anthropic\|import openai" modes/ nodes/` returns zero. |
+
+## Two runtimes
+
+| Runtime | Package | Status |
+|---|---|---|
+| Python | [`coterie`](https://pypi.org/project/coterie/) on PyPI | ✅ All 5 modes |
+| Node / TS | [`coterie`](https://www.npmjs.com/package/coterie) on npm | ⚠️ `single` mode only (v0.1); other 4 land in v0.1.x |
+
+Both share the YAML schema at [`schemas/coterie.config.schema.json`](schemas/coterie.config.schema.json) and the same CLI UX (`coterie run "..." --config ...`). The adapter interface is the same on both sides — a Python-orchestrated team can include JS-implemented adapters via subprocess, and vice versa.
+
+## Provider-agnostic LLM layer
+
+Coterie talks to LLMs via a one-method `LLMClient` ABC. Today's concretes:
+
+- **Anthropic** (default) — `claude-haiku-4-5`, `claude-opus-4-7`, etc.
+- **OpenAI** — `gpt-4o-mini`, `o3`, etc.
+- **Groq** (OpenAI-compatible) — `llama-3.3-70b-versatile`.
+- **xAI** (OpenAI-compatible) — `grok-2-latest`.
+- **Scripted** — replays from JSON. Use in tests; use on stage when the WiFi melts.
+
+Each role in a mode can use a different provider:
+
+```yaml
+mode: adversarial
+adversarial:
+  implementer: claude    # this agent uses Claude
+  auditor: codex         # this one uses Codex
+  judge:
+    model: gpt-4o-mini   # Coterie infers OpenAI from the model name
+```
+
+Set `COTERIE_LLM_PROVIDER=groq` to force a provider for a session.
 
 ## Status
 
-**Alpha — v0.0.1.** The minimal Python and Node packages compile, expose a CLI, and run a 2-node graph (`planner → claude-code → END`). Supervisor routing, fan-out + judge, full HIL UX, tool nodes, and budget enforcement are tracked in [`docs/design.md`](docs/design.md) and land in v0.1.
+**Alpha — v0.1.0.** Five modes fully implemented in Python with 36 tests passing in ~0.5s (FakeAdapter + ScriptedLLMClient — no subprocesses, no API keys, no network). The Node package compiles and runs `single` mode end-to-end; the other four modes mirror over in v0.1.x.
+
+Roadmap and known limitations: [`docs/design.md`](docs/design.md).
+
+## Tests run without API keys
+
+Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). Slide 20 of the deck: the same Protocol that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.
+
+```bash
+cd packages/coterie-py && pytest -v
+# 36 passed in 0.55s
+```
 
 ## License
 
 [MIT](LICENSE). Copyright © 2026 Chris King.
 
-The CLIs Coterie orchestrates (Claude Code, Codex, Cursor, Aider) are invoked as subprocesses and are not bundled — install and authenticate them separately.
+The CLIs Coterie orchestrates (Claude Code, Codex, Cursor, Aider) are invoked as
+subprocesses and are not bundled. Install and authenticate them separately.

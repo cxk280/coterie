@@ -1,0 +1,24 @@
+# debate mode — Pro + Con + Moderator across N rounds, then Judge.
+#
+# Use when: the question is a design / architecture decision rather than a
+# coding task. Two agents argue opposing positions; a moderator summarizes each
+# round; a judge picks the stronger position at the end.
+#
+# Example questions:
+#   "Postgres or SQLite for this app?"
+#   "Should we adopt Server Components in this codebase?"
+#   "Build vs. buy for this feature?"
+version: 1
+mode: debate
+agents:
+  - id: claude
+    adapter: claude-code
+  - id: codex
+    adapter: codex
+debate:
+  sides: [claude, codex]     # [pro, con]
+  rounds: 3
+  moderator:
+    model: claude-haiku-4-5-20251001
+  judge:
+    model: claude-opus-4-7

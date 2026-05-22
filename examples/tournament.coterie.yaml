@@ -1,0 +1,24 @@
+# tournament mode — N participants attempt the same task in parallel; judge ranks.
+#
+# Use when: you want the best of N attempts for a high-stakes implementation.
+# All participants run in parallel (same prompt), then a strong judge ranks them
+# on configured criteria and picks a winner.
+#
+# Cost: ~N × baseline (every participant runs). Use when correctness matters
+# more than cost.
+version: 1
+mode: tournament
+agents:
+  - id: claude
+    adapter: claude-code
+  - id: codex
+    adapter: codex
+  - id: aider
+    adapter: aider
+  - id: cursor
+    adapter: cursor
+tournament:
+  participants: [claude, codex, aider, cursor]
+  judge:
+    model: claude-opus-4-7
+    criteria: [correctness, minimal-diff, tests-pass, clarity]

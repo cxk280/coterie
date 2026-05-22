@@ -1,0 +1,19 @@
+# single mode — supervisor routes one agent per subtask.
+#
+# Use when: you want the orchestrator to pick the best CLI for the task and
+# delegate. Cheapest mode — one CLI invocation per subtask.
+#
+# Run: coterie run "your task" --config examples/single.coterie.yaml
+version: 1
+mode: single
+agents:
+  - id: claude
+    adapter: claude-code
+    strengths: [planning, refactor, general]
+  - id: codex
+    adapter: codex
+    strengths: [algorithmic, tight-diffs]
+router:
+  enabled: true
+  strategy: llm
+  model: claude-haiku-4-5-20251001

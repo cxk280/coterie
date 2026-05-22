@@ -1,0 +1,22 @@
+# consensus mode — N agents independently report defects; engine clusters and labels.
+#
+# Use when: you want a multi-perspective audit. Each agent produces structured
+# findings; an engine LLM clusters semantically equivalent findings and labels
+# each cluster `confirmed` / `needs-verification` / `unverified` by agreement
+# ratio. Best for code review, security audits, "find all the bugs."
+#
+# Cost: ~N × baseline (every participant runs once on the same task).
+version: 1
+mode: consensus
+agents:
+  - id: claude
+    adapter: claude-code
+  - id: codex
+    adapter: codex
+  - id: aider
+    adapter: aider
+consensus:
+  participants: [claude, codex, aider]
+  engine:
+    model: claude-opus-4-7
+    confirm_threshold: 0.5   # 2 of 3 supporters → confirmed

@@ -1,24 +1,30 @@
 # Writing a new adapter
 
-An adapter is a thin subprocess wrapper around a coding CLI. Implementing one is ~30 lines.
+An adapter wraps one coding CLI as a Coterie agent. Implementing one is ~30 lines.
 
 ## Contract
 
 You implement two methods:
 
-- `buildCommand(prompt, workdir, extra) -> argv` — translate a Coterie subtask into the CLI's argv.
-- `parseResult(stdout, stderr, exitCode) -> AdapterResult` — extract structured fields from the CLI's output.
+- `build_command(prompt, workdir, *, extra) -> list[str]` — translate a Coterie subtask into the CLI's argv.
+- `parse_result(stdout, stderr, exit_code) -> AdapterResult` — extract structured fields from the CLI's output.
 
-The base class handles spawning, timeout, timing, and the registry lookup.
+The base class handles spawning, timing, timeouts, and a git-changed-files helper. You declare the adapter's `name` as a class attribute and slap `@register_adapter` on it — the registry picks it up at import time, no other edits required.
 
-## Python example
+## Example: Aider
 
 ```python
 # packages/coterie-py/src/coterie/adapters/aider.py
+from typing import ClassVar
+
 from coterie.adapters.base import AdapterResult, CLIAdapter
+from coterie.core.registry import register_adapter
 
 
+@register_adapter
 class AiderAdapter(CLIAdapter):
+    name: ClassVar[str] = "aider"
+
     def build_command(self, prompt, workdir, *, extra):
         return ["aider", "--message", prompt, "--yes", "--no-stream"]
 
@@ -27,45 +33,30 @@ class AiderAdapter(CLIAdapter):
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,
-            files_changed=self.git_changed_files(workdir="."),
+            files_changed=self.git_changed_files("."),
         )
 ```
 
-Then register it in `adapters/__init__.py`:
+Then add `aider` to the import list in `adapters/__init__.py`:
 
 ```python
-from coterie.adapters.aider import AiderAdapter
-REGISTRY["aider"] = AiderAdapter
+from coterie.adapters import aider, claude_code, codex, fake  # noqa: F401
 ```
 
-## TypeScript example
-
-```ts
-// packages/coterie-js/src/adapters/aider.ts
-import { CLIAdapter, type AdapterResult } from "./base.js";
-
-export class AiderAdapter extends CLIAdapter {
-  buildCommand(prompt: string): string[] {
-    return ["aider", "--message", prompt, "--yes", "--no-stream"];
-  }
-
-  parseResult(stdout: string, stderr: string, exit_code: number): AdapterResult {
-    return {
-      stdout,
-      stderr,
-      exit_code,
-      files_changed: [],
-      duration_s: 0,
-      cost_estimate_usd: null,
-    };
-  }
-}
-```
+That's it. Configs referencing `adapter: aider` now resolve to your new class.
 
 ## Cost reporting
 
-If your CLI surfaces token usage or cost in its output, parse it into `cost_estimate_usd`. Otherwise leave it `null` — Coterie will fall back to model rate-card estimation using the prompt and output text length.
+If the CLI surfaces structured token usage or cost, parse it into `cost_estimate_usd`. See `claude_code.py` for an example — `--output-format json` returns `total_cost_usd`. If the CLI doesn't expose it, leave `cost_estimate_usd=None` and rely on the supervisor / judge to estimate via model rate-card.
 
 ## Files-changed
 
-If the CLI doesn't tell you which files it touched, use `git status --porcelain` as a fallback. The base class exposes `git_changed_files(workdir)` for this.
+If the CLI doesn't tell you what it touched, the base class exposes `self.git_changed_files(workdir)` which runs `git status --porcelain` and returns the changed paths.
+
+## Schema
+
+Add the adapter name to the `enum` in `schemas/coterie.config.schema.json` under `properties.agents.items.properties.adapter`. This is the only schema edit; everything else is config.
+
+## Tests
+
+You don't need to test subprocess behavior — that's the base class's job. But it's worth a unit test that asserts your `build_command()` outputs the right argv and that `parse_result()` handles the CLI's success and error outputs. See `tests/test_smoke.py` for the Claude Code adapter's tests as a template.

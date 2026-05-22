@@ -1,9 +1,0 @@
-# Minimal Coterie config: one agent, no fan-out, no HIL.
-# Run with: coterie run "your task here" --config examples/minimal.coterie.yaml
-version: 1
-agents:
-  - id: claude
-    adapter: claude-code
-    strengths: [planning, refactor, general]
-router:
-  enabled: false   # only one agent, nothing to route

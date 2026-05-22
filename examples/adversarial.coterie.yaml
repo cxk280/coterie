@@ -1,0 +1,26 @@
+# adversarial mode — Implementer + Auditor + Judge with refinement loop.
+#
+# Use when: you want stress-tested code. Implementer writes it; Auditor
+# aggressively finds defects (structured JSON: category, severity, line ranges);
+# Judge sustains real defects above the severity threshold; sustained critiques
+# feed back to the Implementer for another pass. Up to `max_rounds`.
+#
+# This is Coterie's distinctive primitive. Closest prior art: bug-hunter
+# (security-focused) and Anthropic's "AI safety via debate" (research framework).
+# Coterie's spin: general-purpose, configurable, swappable with other modes.
+version: 1
+mode: adversarial
+agents:
+  - id: implementer
+    adapter: claude-code
+    strengths: [implementation]
+  - id: critic
+    adapter: codex
+    strengths: [adversarial-review, edge-cases]
+adversarial:
+  implementer: implementer
+  auditor: critic
+  judge:
+    model: claude-opus-4-7
+    sustain_threshold: medium   # ignores low-severity nitpicks
+  max_rounds: 3
