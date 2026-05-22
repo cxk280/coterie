@@ -6,7 +6,7 @@ from coterie.adapters.claude_code import ClaudeCodeAdapter
 
 
 def test_version() -> None:
-    assert __version__ == "0.0.1"
+    assert __version__ == "0.1.0"
 
 
 def test_claude_adapter_builds_command() -> None:

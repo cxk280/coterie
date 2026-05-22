@@ -1,10 +1,15 @@
+"""Claude Code CLI adapter."""
+
 import json
+from typing import ClassVar
 
 from coterie.adapters.base import AdapterResult, CLIAdapter
+from coterie.core.registry import register_adapter
 
 
+@register_adapter
 class ClaudeCodeAdapter(CLIAdapter):
-    """Wraps the `claude` CLI in headless (`-p`) mode."""
+    name: ClassVar[str] = "claude-code"
 
     def build_command(self, prompt: str, workdir: str, *, extra: dict) -> list[str]:
         cmd = ["claude", "-p", prompt, "--output-format", "json"]

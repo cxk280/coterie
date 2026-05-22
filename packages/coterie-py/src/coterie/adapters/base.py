@@ -1,7 +1,17 @@
+"""CLIAdapter contract.
+
+Slide 07 (Single Responsibility): the adapter contract is intentionally tiny.
+Two abstract methods: `build_command` and `parse_result`. Everything else
+(subprocess spawning, timing, git-changed-files helper) lives in the base class.
+
+Concrete adapters declare `name: ClassVar[str]` and register via `@register_adapter`.
+"""
+
 import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 
 @dataclass
@@ -15,7 +25,7 @@ class AdapterResult:
 
 
 class CLIAdapter(ABC):
-    agent_id: str
+    name: ClassVar[str]  # required on subclasses; used by @register_adapter
 
     def __init__(self, agent_id: str, *, model: str | None = None) -> None:
         self.agent_id = agent_id
