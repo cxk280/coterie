@@ -32,11 +32,17 @@ from coterie_api.users import (
     user_for_token,
 )
 
-TOKEN_PATH = Path(
-    os.environ.get("COTERIE_API_TOKEN_PATH", Path.home() / ".coterie" / "api-token")
-)
-ALLOW_LOCALHOST = os.environ.get("COTERIE_API_ALLOW_LOCALHOST", "1") == "1"
 SESSION_COOKIE = "coterie_session"
+
+
+def _token_path() -> Path:
+    return Path(
+        os.environ.get("COTERIE_API_TOKEN_PATH", Path.home() / ".coterie" / "api-token")
+    )
+
+
+def _allow_localhost() -> bool:
+    return os.environ.get("COTERIE_API_ALLOW_LOCALHOST", "1") == "1"
 
 _lock = threading.Lock()
 _cached_legacy: str | None = None
@@ -53,13 +59,13 @@ def _ensure_legacy_token() -> str:
         if env_tok:
             _cached_legacy = env_tok.strip()
             return _cached_legacy
-        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if TOKEN_PATH.exists():
-            _cached_legacy = TOKEN_PATH.read_text().strip()
+        _token_path().parent.mkdir(parents=True, exist_ok=True)
+        if _token_path().exists():
+            _cached_legacy = _token_path().read_text().strip()
             return _cached_legacy
         _cached_legacy = secrets.token_urlsafe(32)
-        TOKEN_PATH.write_text(_cached_legacy)
-        TOKEN_PATH.chmod(0o600)
+        _token_path().write_text(_cached_legacy)
+        _token_path().chmod(0o600)
         return _cached_legacy
 
 
@@ -71,9 +77,9 @@ def rotate_token() -> str:
     global _cached_legacy
     with _lock:
         _cached_legacy = secrets.token_urlsafe(32)
-        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_PATH.write_text(_cached_legacy)
-        TOKEN_PATH.chmod(0o600)
+        _token_path().parent.mkdir(parents=True, exist_ok=True)
+        _token_path().write_text(_cached_legacy)
+        _token_path().chmod(0o600)
         return _cached_legacy
 
 
@@ -124,7 +130,7 @@ def resolve_user(
         raise HTTPException(401, "invalid token")
 
     # 4. Localhost dev-user
-    if ALLOW_LOCALHOST and _is_localhost(request):
+    if _allow_localhost() and _is_localhost(request):
         u = ensure_dev_user(store)
         request.state.user = u
         return u
