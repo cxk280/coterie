@@ -4,66 +4,42 @@
   "title": "Coterie configuration",
   "description": "Single source of truth for Coterie runtime configuration. The Python and JS runtimes both validate against this schema.",
   "type": "object",
-  "required": ["agents"],
+  "required": ["mode", "agents"],
   "additionalProperties": false,
   "properties": {
-    "version": {
-      "type": "integer",
-      "const": 1,
-      "description": "Config schema version. Bumped on breaking changes."
+    "version": {"type": "integer", "const": 1},
+    "mode": {
+      "type": "string",
+      "enum": ["single", "consensus", "adversarial", "debate", "tournament"],
+      "description": "Coordination pattern. Each mode wires a different LangGraph topology. See docs/modes.md."
     },
     "agents": {
       "type": "array",
       "minItems": 1,
-      "description": "Coding-CLI agents available to the orchestrator. Order matters only as a default tiebreaker.",
       "items": {
         "type": "object",
         "required": ["id", "adapter"],
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "description": "Stable identifier used in routes, fan-out pairs, and judge outputs."
-          },
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
           "adapter": {
             "type": "string",
-            "enum": ["claude-code", "codex", "cursor", "aider", "shell"],
-            "description": "Built-in adapter to use. `shell` lets you wrap an arbitrary CLI via the `command` template."
+            "enum": ["claude-code", "codex", "cursor", "aider", "shell", "fake"]
           },
-          "command": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Required when adapter=shell. Argv template; supports `{prompt}` and `{workdir}` placeholders."
-          },
-          "model": {
-            "type": "string",
-            "description": "Optional model hint passed through to the adapter (e.g., `claude-opus-4-7`)."
-          },
-          "strengths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Free-text capability hints surfaced to the supervisor (e.g., `planning`, `refactor`, `tests`)."
-          },
-          "timeout_s": {
-            "type": "integer",
-            "minimum": 10,
-            "default": 600
-          }
+          "command": {"type": "array", "items": {"type": "string"}},
+          "model": {"type": "string"},
+          "strengths": {"type": "array", "items": {"type": "string"}},
+          "timeout_s": {"type": "integer", "minimum": 10, "default": 600}
         }
       }
     },
     "router": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Supervisor / routing behavior.",
+      "description": "Used in `single` mode to pick which agent handles each subtask.",
       "properties": {
         "enabled": {"type": "boolean", "default": true},
-        "model": {
-          "type": "string",
-          "default": "claude-haiku-4-5-20251001",
-          "description": "Cheap model used for routing decisions."
-        },
+        "model": {"type": "string", "default": "claude-haiku-4-5-20251001"},
         "strategy": {
           "type": "string",
           "enum": ["llm", "round-robin", "manual"],
@@ -71,18 +47,94 @@
         }
       }
     },
-    "fanout": {
+    "single": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Optional parallel fan-out: N agents race on the same task, then a judge picks a winner.",
+      "description": "Single-routed mode: router picks one agent per subtask."
+    },
+    "consensus": {
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "enabled": {"type": "boolean", "default": false},
-        "pair": {
+        "participants": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 2
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {"type": "string", "default": "claude-opus-4-7"},
+            "confirm_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.5
+            }
+          }
+        }
+      }
+    },
+    "adversarial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementer", "auditor"],
+      "properties": {
+        "implementer": {"type": "string"},
+        "auditor": {"type": "string"},
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {"type": "string", "default": "claude-opus-4-7"},
+            "sustain_threshold": {
+              "type": "string",
+              "enum": ["low", "medium", "high"],
+              "default": "medium"
+            }
+          }
+        },
+        "max_rounds": {"type": "integer", "minimum": 1, "default": 3}
+      }
+    },
+    "debate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sides"],
+      "properties": {
+        "sides": {
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": {"type": "string"},
-          "description": "Exactly two agent IDs that race. (N>2 racing is a future extension.)"
+          "items": {"type": "string"}
+        },
+        "rounds": {"type": "integer", "minimum": 1, "default": 3},
+        "moderator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {"type": "string", "default": "claude-haiku-4-5-20251001"}
+          }
+        },
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {"type": "string", "default": "claude-opus-4-7"}
+          }
+        }
+      }
+    },
+    "tournament": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participants"],
+      "properties": {
+        "participants": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"type": "string"}
         },
         "judge": {
           "type": "object",
@@ -91,10 +143,7 @@
             "model": {"type": "string", "default": "claude-opus-4-7"},
             "criteria": {
               "type": "array",
-              "items": {
-                "type": "string",
-                "enum": ["correctness", "minimal-diff", "tests-pass", "clarity", "speed"]
-              },
+              "items": {"type": "string"},
               "default": ["correctness", "minimal-diff", "tests-pass", "clarity"]
             }
           }
@@ -103,17 +152,7 @@
     },
     "checkpoints": {
       "type": "object",
-      "additionalProperties": {"type": "boolean"},
-      "description": "Per-node HIL interrupt toggles. Keys are node names; `true` pauses before the node executes and waits for human approval.",
-      "examples": [
-        {
-          "before_planner": false,
-          "before_agent_run": true,
-          "before_judge": false,
-          "before_git_commit": true,
-          "before_pytest": false
-        }
-      ]
+      "additionalProperties": {"type": "boolean"}
     },
     "budget": {
       "type": "object",
@@ -130,7 +169,6 @@
     },
     "tools": {
       "type": "array",
-      "description": "Deterministic dev tools registered as graph nodes (pytest, ruff, git, etc.).",
       "items": {
         "type": "object",
         "required": ["id", "kind"],
@@ -141,10 +179,7 @@
             "type": "string",
             "enum": ["pytest", "vitest", "ruff", "eslint", "git", "shell"]
           },
-          "args": {
-            "type": "array",
-            "items": {"type": "string"}
-          }
+          "args": {"type": "array", "items": {"type": "string"}}
         }
       }
     },
@@ -160,10 +195,6 @@
         "log_dir": {"type": "string", "default": ".coterie/logs"}
       }
     },
-    "workdir": {
-      "type": "string",
-      "description": "Working directory agents operate on. Defaults to CWD.",
-      "default": "."
-    }
+    "workdir": {"type": "string", "default": "."}
   }
 }
