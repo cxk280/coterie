@@ -19,6 +19,7 @@ loop back to the Implementer, which sees them in its next prompt.
 
 from langgraph.graph import END, START, StateGraph
 
+from coterie.core.compile import compile_with_interrupts
 from coterie.core.executor import AdapterExecutor
 from coterie.core.llm.base import LLMClient
 from coterie.core.registry import register_mode
@@ -87,4 +88,4 @@ def build(
         "judge", route_from_judge, {END: END, "implementer": "implementer"}
     )
 
-    return g.compile()
+    return compile_with_interrupts(g, config)

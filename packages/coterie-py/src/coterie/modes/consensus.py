@@ -5,6 +5,7 @@
 
 from langgraph.graph import END, START, StateGraph
 
+from coterie.core.compile import compile_with_interrupts
 from coterie.core.executor import AdapterExecutor
 from coterie.core.llm.base import LLMClient
 from coterie.core.registry import register_mode
@@ -67,4 +68,4 @@ def build(
         g.add_edge(f"participant_{pid}", "engine")
     g.add_edge("engine", END)
 
-    return g.compile()
+    return compile_with_interrupts(g, config)

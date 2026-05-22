@@ -8,10 +8,12 @@ Slide 13 of the deck: `grep "import openai\\|import docker" core/` should return
 
 import os
 import sys
+import uuid
 from typing import Optional
 
 import click
 from rich.console import Console
+from rich.prompt import Confirm
 
 from coterie.config import load_config
 from coterie.core.executor import AdapterExecutor, IsolatedWorktreeExecutor, LocalSubprocessExecutor
@@ -154,10 +156,52 @@ def run(task: str, config_path: str, workdir: str) -> None:
         "next_agent": None,
         "mode_state": {},
     }
-    final = graph.invoke(initial)
+
+    has_checkpoints = any((cfg.get("checkpoints") or {}).values())
+    if has_checkpoints:
+        final = _run_with_checkpoints(graph, initial)
+    else:
+        final = graph.invoke(initial)
 
     _render_summary(mode, final)
     sys.exit(0 if final.get("status") == "done" else 1)
+
+
+def _run_with_checkpoints(graph, initial: dict) -> dict:
+    """Drive the graph through HIL interrupts. Resumes on approve, terminates on reject."""
+    thread_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    state: dict | None = initial
+
+    while True:
+        result = graph.invoke(state, config=thread_config)
+        # Check whether we paused at an interrupt.
+        try:
+            state_info = graph.get_state(thread_config)
+            next_nodes = list(state_info.next)
+        except Exception:
+            next_nodes = []
+
+        if not next_nodes:
+            return result
+
+        node = next_nodes[0]
+        console.print()
+        console.rule(f"[yellow]⏸ paused before:[/] [bold]{node}[/]")
+        if result.get("runs"):
+            last = result["runs"][-1]
+            console.print(f"  last run: [bold]{last.get('agent_id')}[/] ({last.get('role')})")
+            preview = (last.get("stdout") or "")[:240]
+            if preview:
+                console.print(f"  preview: [dim]{preview}{'…' if len(last.get('stdout', '')) > 240 else ''}[/]")
+        console.print(f"  spend so far: [dim]${result.get('spend_usd', 0):.4f}[/]")
+
+        if not Confirm.ask(f"approve {node}?", default=True):
+            console.print("[red]rejected.[/]")
+            result = dict(result)
+            result["status"] = "rejected"
+            return result
+
+        state = None  # resume
 
 
 def _render_summary(mode: str, final: dict) -> None:

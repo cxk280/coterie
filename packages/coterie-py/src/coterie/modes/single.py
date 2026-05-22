@@ -7,6 +7,7 @@
 
 from langgraph.graph import END, START, StateGraph
 
+from coterie.core.compile import compile_with_interrupts
 from coterie.core.executor import AdapterExecutor
 from coterie.core.llm.base import LLMClient
 from coterie.core.registry import register_mode
@@ -65,4 +66,4 @@ def build(
     g.add_conditional_edges("supervisor", route, {END: END, "agent": "agent"})
     g.add_edge("agent", "advance")
     g.add_edge("advance", "supervisor")
-    return g.compile()
+    return compile_with_interrupts(g, config)
