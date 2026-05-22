@@ -29,6 +29,7 @@ from typing import Any
 
 from coterie.core.executor import IsolatedWorktreeExecutor, LocalSubprocessExecutor
 from coterie.graph import build_graph
+from coterie.observability import current_trace_id, span_for_run
 
 from coterie_api.models import Mode
 from coterie_api.store import Store
@@ -178,45 +179,52 @@ class Runner:
         loop = asyncio.get_running_loop()
         started = time.monotonic()
         try:
-            self.store.update_run_status(run_id, "running")
-            await self._emit(run_id, "status_change", {"status": "running"})
+            with span_for_run(run_id=run_id, mode=config["mode"], task=task) as run_span:
+                run_span.set_attribute("coterie.run.source", "api")
+                trace_id = current_trace_id()
+                if trace_id:
+                    self.store.set_trace_id(run_id, trace_id)
+                    await self._emit(run_id, "trace", {"trace_id": trace_id})
 
-            executor = (
-                IsolatedWorktreeExecutor()
-                if config.get("mode") in ("consensus", "tournament")
-                else LocalSubprocessExecutor()
-            )
-            llms = _build_llms_for(config)
-            graph = build_graph(
-                config=config,
-                workdir=".",
-                executor=executor,
-                checkpointer=self._checkpointer,
-                **llms,
-            )
+                self.store.update_run_status(run_id, "running")
+                await self._emit(run_id, "status_change", {"status": "running"})
 
-            initial = _initial_state(task, config)
-            thread_config = {"configurable": {"thread_id": run_id}}
+                executor = (
+                    IsolatedWorktreeExecutor()
+                    if config.get("mode") in ("consensus", "tournament")
+                    else LocalSubprocessExecutor()
+                )
+                llms = _build_llms_for(config)
+                graph = build_graph(
+                    config=config,
+                    workdir=".",
+                    executor=executor,
+                    checkpointer=self._checkpointer,
+                    **llms,
+                )
 
-            self._handles[run_id] = {
-                "graph": graph,
-                "thread_config": thread_config,
-                "started": started,
-                "config": config,
-            }
+                initial = _initial_state(task, config)
+                thread_config = {"configurable": {"thread_id": run_id}}
 
-            final = await loop.run_in_executor(
-                self._executor,
-                _drive_graph,
-                graph,
-                initial,
-                thread_config,
-                run_id,
-                self,
-                loop,
-            )
+                self._handles[run_id] = {
+                    "graph": graph,
+                    "thread_config": thread_config,
+                    "started": started,
+                    "config": config,
+                }
 
-            await self._finalize_or_pause(run_id, final, started, graph, thread_config)
+                final = await loop.run_in_executor(
+                    self._executor,
+                    _drive_graph,
+                    graph,
+                    initial,
+                    thread_config,
+                    run_id,
+                    self,
+                    loop,
+                )
+
+                await self._finalize_or_pause(run_id, final, started, graph, thread_config)
 
         except Exception as e:  # noqa: BLE001
             self.store.update_run_status(run_id, "failed", status_reason=str(e))

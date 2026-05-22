@@ -125,6 +125,11 @@ def _build_llms(cfg: dict) -> dict[str, Optional[LLMClient]]:
 @click.version_option()
 def main() -> None:
     """Coterie — orchestrate heterogeneous coding agents via LangGraph."""
+    # Tracing is configured the first time any subcommand runs. setup_tracing()
+    # is a no-op when no exporter env vars are present.
+    from coterie.observability import setup_tracing
+
+    setup_tracing(service_name="coterie-cli")
 
 
 @main.command()
@@ -133,6 +138,8 @@ def main() -> None:
 @click.option("--workdir", default=".", show_default=True)
 def run(task: str, config_path: str, workdir: str) -> None:
     """Run a task through the configured coordination mode."""
+    from coterie.observability import span_for_run
+
     cfg = load_config(config_path)
     mode = cfg["mode"]
 
@@ -157,11 +164,13 @@ def run(task: str, config_path: str, workdir: str) -> None:
         "mode_state": {},
     }
 
-    has_checkpoints = any((cfg.get("checkpoints") or {}).values())
-    if has_checkpoints:
-        final = _run_with_checkpoints(graph, initial)
-    else:
-        final = graph.invoke(initial)
+    cli_run_id = f"cli-{uuid.uuid4().hex[:12]}"
+    with span_for_run(run_id=cli_run_id, mode=mode, task=task):
+        has_checkpoints = any((cfg.get("checkpoints") or {}).values())
+        if has_checkpoints:
+            final = _run_with_checkpoints(graph, initial)
+        else:
+            final = graph.invoke(initial)
 
     _render_summary(mode, final)
     sys.exit(0 if final.get("status") == "done" else 1)

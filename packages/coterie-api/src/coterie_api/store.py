@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS runs (
     current_state_json TEXT,
     final_state_json TEXT,
     owner_id TEXT,
+    trace_id TEXT,
     spend_usd REAL NOT NULL DEFAULT 0,
     duration_s REAL,
     created_at TEXT NOT NULL,
@@ -89,6 +90,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE runs ADD COLUMN current_state_json TEXT;")
     if "owner_id" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN owner_id TEXT;")
+    if "trace_id" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN trace_id TEXT;")
 
 
 class Store:
@@ -131,6 +134,10 @@ class Store:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (run_id, task, mode, "queued", json.dumps(config), owner_id, now, now),
             )
+
+    def set_trace_id(self, run_id: str, trace_id: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE runs SET trace_id = ? WHERE id = ?", (trace_id, run_id))
 
     def update_run_status(
         self,
@@ -331,6 +338,7 @@ def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
         "current_state": json.loads(row["current_state_json"]) if row["current_state_json"] else None,
         "final_state": json.loads(row["final_state_json"]) if row["final_state_json"] else None,
         "owner_id": row["owner_id"] if "owner_id" in keys else None,
+        "trace_id": row["trace_id"] if "trace_id" in keys else None,
         "spend_usd": row["spend_usd"],
         "duration_s": row["duration_s"],
         "created_at": row["created_at"],

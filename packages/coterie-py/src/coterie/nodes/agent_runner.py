@@ -27,6 +27,7 @@ from coterie.adapters.base import CLIAdapter
 from coterie.core.executor import AdapterExecutor
 from coterie.core.registry import ADAPTER_REGISTRY
 from coterie.core.state import CoterieState
+from coterie.observability import span_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +111,28 @@ def make_agent_runner(
             plan = state.get("plan") or [state["task"]]
             prompt = plan[state.get("current_step_idx", 0)]
 
-        result = executor.execute(
-            adapter,
-            prompt,
-            workdir,
-            timeout_s=agent_cfg.get("timeout_s", 600),
-        )
+        with span_for_agent(
+            agent_id=resolved_id, adapter=agent_cfg["adapter"], role=role
+        ) as span:
+            span.set_attribute("coterie.prompt.length", len(prompt or ""))
+            span.set_attribute("coterie.step_idx", state.get("current_step_idx", 0))
+            try:
+                result = executor.execute(
+                    adapter,
+                    prompt,
+                    workdir,
+                    timeout_s=agent_cfg.get("timeout_s", 600),
+                )
+            except Exception as e:  # noqa: BLE001
+                span.record_exception(e)
+                raise
+            span.set_attribute("coterie.agent.exit_code", result.exit_code)
+            span.set_attribute("coterie.agent.duration_s", result.duration_s)
+            if result.cost_estimate_usd is not None:
+                span.set_attribute("coterie.cost_usd", result.cost_estimate_usd)
+            span.set_attribute("coterie.agent.stdout_bytes", len(result.stdout or ""))
+            span.set_attribute("coterie.agent.files_changed", len(result.files_changed or []))
+
         run = {
             "agent_id": resolved_id,
             "role": role,

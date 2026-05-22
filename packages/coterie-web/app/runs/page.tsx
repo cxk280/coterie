@@ -37,6 +37,8 @@ function toRunSummary(r: ApiRunSummary): RunSummary {
     status,
     status_reason: r.status_reason ?? undefined,
     when: relative(r.created_at),
+    trace_id: r.trace_id,
+    trace_url: r.trace_url,
   };
 }
 

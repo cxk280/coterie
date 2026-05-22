@@ -205,6 +205,57 @@ def test_runner_uses_persistent_checkpointer(client):
     assert isinstance(app.state.runner._checkpointer, SqliteSaver)
 
 
+def test_run_carries_trace_id_when_tracing_enabled(client, monkeypatch, tmp_path):
+    """With an InMemorySpanExporter wired into coterie's tracer, the runner
+    captures a trace_id, persists it on the row, and surfaces it on the API
+    response.
+    """
+    import time
+
+    from coterie.adapters.base import AdapterResult
+    from coterie.adapters.fake import FakeAdapter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(InMemorySpanExporter()))
+    import coterie.observability.tracer as tracer_mod
+
+    monkeypatch.setattr(tracer_mod, "_tracer", provider.get_tracer("coterie"))
+
+    FakeAdapter.reset_all()
+    FakeAdapter.script("a", [AdapterResult("hi", "", 0, cost_estimate_usd=0.01)])
+
+    cfg = {
+        "version": 1,
+        "agents": [{"id": "a", "adapter": "fake"}],
+        "router": {"enabled": False},
+    }
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={"task": "with-trace", "mode": "single", "config": cfg},
+    )
+    assert r.status_code == 200
+    rid = r.json()["id"]
+
+    for _ in range(50):
+        body = client.get(f"/api/runs/{rid}", headers=auth(client)).json()
+        if body["summary"]["status"] in ("done", "failed"):
+            break
+        time.sleep(0.1)
+
+    summary = body["summary"]
+    assert summary["trace_id"] is not None
+    # 32-char hex (128-bit trace id) — sanity check format
+    assert len(summary["trace_id"]) == 32
+    int(summary["trace_id"], 16)  # parses as hex
+    provider.shutdown()
+
+
 # ---------- multi-user auth ----------
 
 

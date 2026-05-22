@@ -33,6 +33,8 @@ class RunSummary(BaseModel):
     spend_usd: float
     duration_s: float | None = None
     owner_id: str | None = None
+    trace_id: str | None = None
+    trace_url: str | None = None
     created_at: datetime
     updated_at: datetime
 

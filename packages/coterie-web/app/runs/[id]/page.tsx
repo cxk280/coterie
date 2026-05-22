@@ -62,7 +62,24 @@ export default async function RunDetailPage({ params }: PageProps) {
           ✓ done
         </span>
 
-        <Button size="sm">↗ Share</Button>
+        {summary.trace_url ? (
+          <a
+            href={summary.trace_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium"
+            style={{
+              background: "var(--color-bg-raised)",
+              borderColor: "var(--color-border-default)",
+              color: "var(--color-text-primary)",
+            }}
+            title={`trace_id: ${summary.trace_id ?? ""}`}
+          >
+            ↗ View in Langfuse
+          </a>
+        ) : (
+          <Button size="sm">↗ Share</Button>
+        )}
       </header>
 
       <div className="flex flex-1 overflow-hidden">

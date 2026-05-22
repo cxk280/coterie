@@ -61,6 +61,18 @@ CLEANUP_INTERVAL_S = int(os.environ.get("COTERIE_CLEANUP_INTERVAL_S", "3600"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Tracing setup runs first so the Runner + every downstream call is
+    # captured. setup_tracing is idempotent.
+    from coterie.observability import setup_tracing
+
+    setup_tracing(service_name="coterie-api")
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(app)
+    except Exception:  # noqa: BLE001
+        pass
+
     db = Path(os.environ.get("COTERIE_DB_PATH", Path.home() / ".coterie" / "runs.sqlite"))
     app.state.store = Store(db)
     app.state.runner = Runner(app.state.store)
@@ -337,8 +349,11 @@ async def github_callback(
 
 
 def _to_summary(run: dict) -> RunSummary:
+    from coterie.observability import trace_url_for
+
     config = run["config"]
     agents_list = [a["id"] for a in config.get("agents", [])]
+    trace_id = run.get("trace_id")
     return RunSummary(
         id=run["id"],
         task=run["task"],
@@ -349,6 +364,8 @@ def _to_summary(run: dict) -> RunSummary:
         spend_usd=run["spend_usd"] or 0.0,
         duration_s=run.get("duration_s"),
         owner_id=run.get("owner_id"),
+        trace_id=trace_id,
+        trace_url=trace_url_for(trace_id),
         created_at=_parse_dt(run["created_at"]),
         updated_at=_parse_dt(run["updated_at"]),
     )

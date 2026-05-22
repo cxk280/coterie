@@ -155,6 +155,32 @@ Set `COTERIE_LLM_PROVIDER=groq` to force a provider for a session.
 
 Roadmap and known limitations: [`docs/design.md`](docs/design.md).
 
+## Observability
+
+Every meaningful unit of work — graph runs, LangGraph nodes, LLM calls, CLI
+agent invocations — becomes an OpenTelemetry span with `coterie.*` and
+`gen_ai.*` semantic attributes (mode, agent id, model, token counts, exit
+code, cost). Tracing is **off by default**; flip it on by setting any of these
+env vars:
+
+```bash
+# Self-hosted Langfuse (recommended)
+export LANGFUSE_HOST=http://localhost:3001
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+
+# Or LangSmith
+export LANGSMITH_API_KEY=ls-...
+
+# Or any OTLP/HTTP collector
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com/v1/traces
+```
+
+A complete self-hosted Langfuse stack (web + worker + Postgres + ClickHouse
++ Redis + MinIO) lives at [`infra/langfuse/`](infra/langfuse/) — `docker
+compose up -d` and you're collecting traces locally. The web dashboard's
+run-detail page deep-links each run to its Langfuse trace.
+
 ## Tests run without API keys
 
 Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). The same `Protocol` that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.

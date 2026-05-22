@@ -70,6 +70,8 @@ export interface RunSummary {
   status: "done" | "failed" | "rejected" | "running";
   status_reason?: string;
   when: string;
+  trace_id?: string | null;
+  trace_url?: string | null;
 }
 
 export interface CoterieState {

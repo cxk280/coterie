@@ -28,6 +28,9 @@ export interface ApiRunSummary {
   agents: string[];
   spend_usd: number;
   duration_s: number | null;
+  owner_id: string | null;
+  trace_id: string | null;
+  trace_url: string | null;
   created_at: string;
   updated_at: string;
 }

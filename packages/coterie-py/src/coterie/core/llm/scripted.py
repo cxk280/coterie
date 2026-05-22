@@ -1,8 +1,7 @@
 """Test / demo doubles for LLMClient.
 
-Slide 20: protocol-typed deps make fakes trivial. Slide 21: ScriptedLLMClient
-ships in the real package so unit tests and offline demos use the same
-implementation.
+Protocol-typed deps make fakes trivial. ScriptedLLMClient ships in the real
+package so unit tests and offline demos use the same implementation.
 """
 
 import json
@@ -20,10 +19,13 @@ class ScriptedLLMError(RuntimeError):
 class ScriptedLLMClient(LLMClient):
     """Replays a queue of pre-recorded responses.
 
-    Two use cases (slide 21):
+    Two use cases:
     1. Unit / integration tests — no API key, no network, deterministic.
-    2. Offline demo on stage — agents still run for real, only the LLM round-trip is replayed.
+    2. Offline demo — agents still run for real, only the LLM round-trip is replayed.
     """
+
+    provider = "scripted"
+    model = "scripted"
 
     def __init__(self, responses: Iterable[str]) -> None:
         self._responses: deque[str] = deque(responses)
@@ -39,7 +41,7 @@ class ScriptedLLMClient(LLMClient):
     def queue(self, response: str) -> None:
         self._responses.append(response)
 
-    def chat(self, system: str, messages: list[dict]) -> str:
+    def _chat(self, system: str, messages: list[dict]) -> str:
         self.calls.append({"system": system, "messages": messages})
         if not self._responses:
             raise ScriptedLLMError(
