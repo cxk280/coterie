@@ -68,9 +68,10 @@ def make_agent_runner(
             "duration_s": result.duration_s,
             "cost_estimate_usd": result.cost_estimate_usd,
         }
+        # spend_usd reducer is `add`, so each node returns only its own delta.
         return {
             "runs": [run],
-            "spend_usd": state.get("spend_usd", 0.0) + (result.cost_estimate_usd or 0.0),
+            "spend_usd": result.cost_estimate_usd or 0.0,
         }
 
     return node

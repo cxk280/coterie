@@ -85,7 +85,10 @@ class CoterieState(TypedDict, total=False):
     artifacts: dict[str, str]
     status: Status
     config: dict[str, Any]
-    spend_usd: float
+    # Reducer is `add` so parallel nodes (consensus participants, tournament
+    # entrants) can each contribute their own cost delta in the same step
+    # without LangGraph's LastValue channel rejecting concurrent updates.
+    spend_usd: Annotated[float, add]
     route_history: Annotated[list[RouteDecision], add]
     judge_history: Annotated[list[JudgeDecision], add]
     next_agent: str | None  # set by supervisor (single mode)

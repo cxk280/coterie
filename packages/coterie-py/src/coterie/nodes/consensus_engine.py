@@ -90,12 +90,15 @@ def make_consensus_engine_node(llm: LLMClient | None = None):
         for c in clusters:
             supporters = list(set(c.get("supporting_agents", [])))
             ratio = len(supporters) / max(n_participants, 1)
-            if ratio >= threshold:
-                label = "confirmed"
-            elif len(supporters) >= 2:
-                label = "needs-verification"
-            else:
+            # A single supporter is never `confirmed`, regardless of threshold.
+            # Multiple supporters can be `confirmed` (above threshold) or
+            # `needs-verification` (below).
+            if len(supporters) <= 1:
                 label = "unverified"
+            elif ratio >= threshold:
+                label = "confirmed"
+            else:
+                label = "needs-verification"
             consensus.append(
                 {
                     "description": c.get("description", ""),
