@@ -314,18 +314,26 @@ class Runner:
 
         duration = time.monotonic() - started
         status = "done" if final.get("status") == "done" else "failed"
+        spend = float(final.get("spend_usd") or 0.0)
         self.store.update_run_status(
             run_id,
             status,
-            spend_usd=final.get("spend_usd", 0.0),
+            spend_usd=spend,
             duration_s=duration,
             final_state=_snapshot(final),
             current_state=_snapshot(final),
         )
+
+        # Attribute the spend to the run's owner for budget tracking.
+        run_row = self.store.get_run(run_id)
+        if run_row and (owner := run_row.get("owner_id")):
+            from coterie_api.quotas import record_spend
+
+            record_spend(self.store, owner, spend)
+
         await self._emit(run_id, "done", {"status": status, "duration_s": duration})
         await self._close_subscribers(run_id)
         self._handles.pop(run_id, None)
-        # Compact the event log so we keep only the structural events.
         try:
             self.store.compact_events(run_id)
         except Exception:  # noqa: BLE001

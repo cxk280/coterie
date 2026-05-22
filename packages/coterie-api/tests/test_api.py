@@ -27,9 +27,17 @@ def client(tmp_path):
 
     auth_mod._cached_legacy = None
     from coterie_api.main import app
+    from coterie_api.rate_limit import limiter
+
+    # slowapi's in-memory store persists across tests in the same process. Reset
+    # so a flood test doesn't poison the bucket for subsequent runs against the
+    # same user id.
+    limiter.reset()
 
     with TestClient(app) as c:
         yield c
+
+    limiter.reset()
 
 
 def auth(client):
@@ -203,6 +211,67 @@ def test_runner_uses_persistent_checkpointer(client):
     from coterie_api.main import app
 
     assert isinstance(app.state.runner._checkpointer, SqliteSaver)
+
+
+def test_create_run_402_when_user_over_daily_budget(client, monkeypatch):
+    """A non-admin user with their daily cap exhausted gets a clean 402."""
+    monkeypatch.setenv("COTERIE_DEFAULT_DAILY_CAP_USD", "0.01")
+
+    # Manually create a 'dev' user that is NOT admin by injecting a session.
+    from coterie_api.main import app
+    from coterie_api.users import create_session, upsert_github_user
+
+    store = app.state.store
+    gh_user = upsert_github_user(
+        store, github_id=999, login="testuser", name="Test User", avatar_url=None
+    )
+    session_id = create_session(store, gh_user.id)
+    cookies = {"coterie_session": session_id}
+
+    # Pre-load the user's quota table so the budget cap is set.
+    store.upsert_user_quota(gh_user.id, 0.01)
+    store.increment_user_spend(gh_user.id, 0.02)  # blow past the cap
+
+    r = client.post(
+        "/api/runs",
+        cookies=cookies,
+        json={"task": "anything", "mode": "single", "config": {"version": 1, "agents": []}},
+    )
+    assert r.status_code == 402, r.text
+    detail = r.json()["detail"]
+    assert detail["error"] == "daily_budget_exceeded"
+    assert detail["cap_usd"] == 0.01
+
+
+def test_rate_limit_returns_429(client, monkeypatch):
+    """Hit /api/runs above the configured rate limit → 429 with Retry-After."""
+    monkeypatch.setenv("COTERIE_RATE_LIMIT_CREATE_RUN", "2/minute")
+    # Force a re-read of the limit by importing fresh
+
+    # The rate limiter caches the limit string when the route was registered, so
+    # this test really verifies the SlowAPI middleware emits 429s — using the
+    # production default ("30/minute") and hammering past it.
+    overflow = 32
+    statuses: list[int] = []
+    for i in range(overflow):
+        r = client.post(
+            "/api/runs",
+            headers=auth(client),
+            json={
+                "task": f"flood-{i}",
+                "mode": "single",
+                "config": {
+                    "version": 1,
+                    "agents": [{"id": "a", "adapter": "fake"}],
+                    "router": {"enabled": False},
+                },
+            },
+        )
+        statuses.append(r.status_code)
+        if r.status_code == 429:
+            assert "Retry-After" in r.headers
+            break
+    assert 429 in statuses, f"expected at least one 429 across {overflow} attempts; saw {statuses}"
 
 
 def test_run_carries_trace_id_when_tracing_enabled(client, monkeypatch, tmp_path):

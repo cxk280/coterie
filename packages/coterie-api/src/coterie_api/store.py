@@ -75,6 +75,14 @@ CREATE TABLE IF NOT EXISTS tokens (
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_quotas (
+    user_id TEXT PRIMARY KEY,
+    daily_cap_usd REAL NOT NULL,
+    period_start TEXT NOT NULL,
+    period_spent_usd REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_owner ON runs (owner_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_seq ON events (run_id, seq);
@@ -231,6 +239,63 @@ class Store:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM runs WHERE status = ?", (status,)).fetchall()
             return [_row_to_run(r) for r in rows]
+
+    # ---------- per-user budgets ----------
+
+    def get_user_quota(self, user_id: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM user_quotas WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def upsert_user_quota(self, user_id: str, daily_cap_usd: float) -> None:
+        now = _now()
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT period_start, period_spent_usd FROM user_quotas WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                c.execute(
+                    """INSERT INTO user_quotas (user_id, daily_cap_usd, period_start, period_spent_usd)
+                       VALUES (?, ?, ?, 0)""",
+                    (user_id, daily_cap_usd, now),
+                )
+            else:
+                c.execute(
+                    "UPDATE user_quotas SET daily_cap_usd = ? WHERE user_id = ?",
+                    (daily_cap_usd, user_id),
+                )
+
+    def increment_user_spend(self, user_id: str, delta_usd: float) -> None:
+        """Add to the user's period spend. Idempotent-safe — caller passes deltas."""
+        if delta_usd <= 0:
+            return
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO user_quotas (user_id, daily_cap_usd, period_start, period_spent_usd)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                       period_spent_usd = period_spent_usd + excluded.period_spent_usd""",
+                (user_id, 0.0, _now(), delta_usd),
+            )
+
+    def reset_user_quota_periods(self, *, cutoff: datetime) -> int:
+        """Reset period_spent_usd for any user_quota where period_start is older than cutoff.
+
+        Returns the number of rows reset. Caller controls the schedule (typically
+        daily).
+        """
+        now = _now()
+        with self._conn() as c:
+            cur = c.execute(
+                """UPDATE user_quotas
+                   SET period_spent_usd = 0, period_start = ?
+                   WHERE period_start < ?""",
+                (now, cutoff.isoformat()),
+            )
+            return cur.rowcount
 
     # ---------- events ----------
 

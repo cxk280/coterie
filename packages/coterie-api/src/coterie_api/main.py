@@ -32,6 +32,8 @@ from coterie_api.auth import (
     ensure_owner_or_admin,
     rotate_token,
 )
+from coterie_api.quotas import check_budget, record_spend
+from coterie_api.rate_limit import limiter, rate_limited, user_rate_limit_key
 from coterie_api.models import (
     CreateRunRequest,
     CreateTokenRequest,
@@ -61,8 +63,12 @@ CLEANUP_INTERVAL_S = int(os.environ.get("COTERIE_CLEANUP_INTERVAL_S", "3600"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Tracing setup runs first so the Runner + every downstream call is
-    # captured. setup_tracing is idempotent.
+    # Logging + tracing both run before anything else so every downstream call
+    # is captured with structured fields. Both are idempotent.
+    from coterie_api.logging_setup import setup_logging
+
+    setup_logging()
+
     from coterie.observability import setup_tracing
 
     setup_tracing(service_name="coterie-api")
@@ -111,6 +117,11 @@ async def _cleanup_loop(store: Store) -> None:
             purged = purge_expired_sessions(store)
             if purged:
                 print(f"coterie-api: purged {purged} expired session(s)")
+            # Reset stale daily-budget windows (older than 24h).
+            window_cutoff = cutoff_for(1)
+            reset = store.reset_user_quota_periods(cutoff=window_cutoff)
+            if reset:
+                print(f"coterie-api: reset {reset} user budget window(s)")
         except Exception as e:  # noqa: BLE001
             print(f"coterie-api: cleanup error: {e}")
         await asyncio.sleep(CLEANUP_INTERVAL_S)
@@ -118,9 +129,32 @@ async def _cleanup_loop(store: Store) -> None:
 
 app = FastAPI(title="Coterie API", version="0.1.0", lifespan=lifespan)
 
+# slowapi: attach the shared limiter + 429 handler.
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
+
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse(
+        status_code=429,
+        content={"error": "rate_limited", "detail": str(exc.detail)},
+        headers={"Retry-After": str(int(getattr(exc, "retry_after", 60) or 60))},
+    ),
+)
+app.add_middleware(SlowAPIMiddleware)
+
+from coterie_api.logging_setup import RequestIdMiddleware  # noqa: E402
+
+app.add_middleware(RequestIdMiddleware)
+
+# CORS — allowlist driven by env var (comma-separated origins) so deployments
+# can dial in their own. Defaults to the local dev origins.
+_CORS_DEFAULT = "http://localhost:3000,http://127.0.0.1:3000"
+_cors_origins = [o.strip() for o in os.environ.get("COTERIE_CORS_ORIGINS", _CORS_DEFAULT).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -132,9 +166,20 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict[str, object]:
+    """Readiness probe. Verifies the SQLite store is reachable + reports feature flags."""
+    db_ok = True
+    try:
+        app.state.store.count_runs()
+    except Exception:  # noqa: BLE001
+        db_ok = False
     return {
-        "status": "ok",
+        "status": "ok" if db_ok else "degraded",
+        "version": "0.1.0",
         "github_oauth": oauth.github_enabled(),
+        "tracing": bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
+        or bool(os.environ.get("LANGSMITH_API_KEY"))
+        or bool(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")),
+        "db": "ok" if db_ok else "unreachable",
     }
 
 
@@ -155,7 +200,12 @@ async def agents(_: User = Depends(current_user)) -> list[dict[str, str]]:
 
 
 @app.post("/api/runs", response_model=RunSummary)
-async def create_run(req: CreateRunRequest, user: User = Depends(current_user)) -> RunSummary:
+@limiter.limit(os.environ.get("COTERIE_RATE_LIMIT_CREATE_RUN", "30/minute"))
+async def create_run(
+    request: Request, req: CreateRunRequest, user: User = Depends(current_user)
+) -> RunSummary:
+    # Enforce the per-user daily budget before scheduling any work.
+    check_budget(app.state.store, user)
     runner: Runner = app.state.runner
     run_id = await runner.create_run(
         task=req.task, mode=req.mode, config=req.config, owner_id=user.id

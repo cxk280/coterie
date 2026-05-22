@@ -1,0 +1,73 @@
+name: coterie
+
+# Production-shape docker-compose for Coterie. Brings up API + web behind
+# their respective health checks, sharing a persistent volume for the
+# SQLite stores. Wire Langfuse separately via `infra/langfuse/`.
+#
+# Quick start:
+#   cp .env.example .env       # set LANGFUSE_* and/or COTERIE_API_TOKEN
+#   docker compose up -d --build
+#   open http://localhost:3000
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: packages/coterie-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      COTERIE_API_HOST: 0.0.0.0
+      COTERIE_API_PORT: 8000
+      COTERIE_API_ALLOW_LOCALHOST: "0"
+      COTERIE_LOG_FORMAT: json
+      COTERIE_CORS_ORIGINS: ${COTERIE_CORS_ORIGINS:-http://localhost:3000}
+      COTERIE_DEFAULT_DAILY_CAP_USD: ${COTERIE_DEFAULT_DAILY_CAP_USD:-5.00}
+      COTERIE_RUN_TTL_DAYS: ${COTERIE_RUN_TTL_DAYS:-30}
+      COTERIE_EVENT_TTL_DAYS: ${COTERIE_EVENT_TTL_DAYS:-7}
+      # Provider keys — only set the ones you actually use.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      # Observability (self-hosted Langfuse — see infra/langfuse/)
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      # GitHub OAuth (optional)
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      COTERIE_WEB_BASE: ${COTERIE_WEB_BASE:-http://localhost:3000}
+    volumes:
+      - coterie-data:/data
+    ports:
+      - "${COTERIE_API_PORT_HOST:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/coterie-web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_COTERIE_API_URL: ${NEXT_PUBLIC_COTERIE_API_URL:-http://localhost:8000}
+      COTERIE_API_TOKEN: ${COTERIE_API_TOKEN:-}
+      NEXT_PUBLIC_COTERIE_API_TOKEN: ${NEXT_PUBLIC_COTERIE_API_TOKEN:-}
+    ports:
+      - "${COTERIE_WEB_PORT_HOST:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  coterie-data:

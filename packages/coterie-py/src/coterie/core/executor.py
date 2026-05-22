@@ -120,3 +120,92 @@ class IsolatedWorktreeExecutor:
             check=False,
         )
         shutil.rmtree(isolated, ignore_errors=True)
+
+
+class DockerSwarmExecutor:
+    """Run each adapter invocation inside a fresh Docker container.
+
+    Bind-mounts the workdir into the container at ``/workspace`` and runs the
+    adapter's built command there. Each call gets a uniquely-named container
+    that's ``docker rm -f``'d in finally — even when the adapter crashes — so
+    we don't leak containers.
+
+    The image is configurable via the ``image`` kwarg or
+    ``COTERIE_AGENT_IMAGE`` env var. ``network="none"`` is the secure default;
+    pass ``"host"`` (or any docker network name) to enable egress.
+
+    Streaming output flows through the same ``run_streaming`` helper as the
+    other executors, so the API runner's per-chunk SSE event path Just Works.
+    """
+
+    def __init__(
+        self,
+        *,
+        image: str | None = None,
+        network: str = "none",
+        extra_args: list[str] | None = None,
+    ) -> None:
+        import os as _os
+
+        self.image = image or _os.environ.get("COTERIE_AGENT_IMAGE", "coterie/agent-base:latest")
+        self.network = network
+        self.extra_args = list(extra_args or [])
+
+    def execute(
+        self,
+        adapter: CLIAdapter,
+        prompt: str,
+        workdir: str,
+        *,
+        timeout_s: int = 600,
+        on_output: OnOutput | None = None,
+    ) -> AdapterResult:
+        import time
+        import uuid
+
+        from coterie.core.streaming import run_streaming
+
+        cmd = adapter.build_command(prompt, "/workspace", extra={})
+        container_name = f"coterie-{uuid.uuid4().hex[:10]}"
+        docker_cmd: list[str] = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+            f"--network={self.network}",
+            "-v",
+            f"{Path(workdir).resolve()}:/workspace",
+            "-w",
+            "/workspace",
+            *self.extra_args,
+            self.image,
+            *cmd,
+        ]
+        t0 = time.time()
+        try:
+            if on_output is not None:
+                stream = run_streaming(
+                    docker_cmd, cwd=workdir, timeout_s=timeout_s, on_output=on_output
+                )
+                result = adapter.parse_result(stream.stdout, stream.stderr, stream.exit_code)
+                if stream.timed_out:
+                    result.stderr = (result.stderr or "") + f"\n[coterie] timeout after {timeout_s}s"
+            else:
+                proc = subprocess.run(
+                    docker_cmd,
+                    cwd=workdir,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_s,
+                    check=False,
+                )
+                result = adapter.parse_result(proc.stdout, proc.stderr, proc.returncode)
+        finally:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                check=False,
+            )
+        result.duration_s = time.time() - t0
+        return result
