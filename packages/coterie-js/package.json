@@ -1,0 +1,64 @@
+{
+  "name": "coterie",
+  "version": "0.0.1",
+  "description": "A LangGraph orchestrator for heterogeneous coding agents (Claude Code, Codex, Cursor, Aider) and dev tools.",
+  "license": "MIT",
+  "author": "Chris King <chris@cking.me>",
+  "homepage": "https://coterie.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cking/coterie.git",
+    "directory": "packages/coterie-js"
+  },
+  "bugs": "https://github.com/cking/coterie/issues",
+  "keywords": [
+    "langgraph",
+    "agents",
+    "llm",
+    "orchestration",
+    "claude",
+    "codex",
+    "aider"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "coterie": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "dev": "tsx src/cli.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@langchain/langgraph": "^0.2.0",
+    "@anthropic-ai/sdk": "^0.30.0",
+    "ajv": "^8.17.1",
+    "commander": "^12.1.0",
+    "yaml": "^2.5.0",
+    "kleur": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
