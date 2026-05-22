@@ -47,6 +47,16 @@
         }
       }
     },
+    "planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "LLM-driven task decomposition. Off by default (trivial planner: plan = [task]). When enabled, decomposes the task into a sequence of subtasks. Only `single` mode iterates multi-step plans today; other modes use plan[0].",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "model": {"type": "string", "default": "claude-haiku-4-5-20251001"},
+        "max_subtasks": {"type": "integer", "minimum": 1, "default": 5}
+      }
+    },
     "single": {
       "type": "object",
       "additionalProperties": false,

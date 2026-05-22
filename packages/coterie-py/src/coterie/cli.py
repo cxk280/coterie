@@ -80,6 +80,14 @@ def _moderator_model(cfg: dict) -> str | None:
     return (cfg.get("debate") or {}).get("moderator", {}).get("model")
 
 
+def _planner_model(cfg: dict) -> str | None:
+    return (cfg.get("planner") or {}).get("model")
+
+
+def _planner_enabled(cfg: dict) -> bool:
+    return bool((cfg.get("planner") or {}).get("enabled"))
+
+
 def _build_llms(cfg: dict) -> dict[str, Optional[LLMClient]]:
     """Build per-role LLMs. None entries mean 'this role isn't needed for the chosen mode'."""
     return {
@@ -89,6 +97,7 @@ def _build_llms(cfg: dict) -> dict[str, Optional[LLMClient]]:
         else None,
         "consensus_llm": _build_llm(_consensus_model(cfg)) if cfg.get("mode") == "consensus" else None,
         "moderator_llm": _build_llm(_moderator_model(cfg)) if cfg.get("mode") == "debate" else None,
+        "planner_llm": _build_llm(_planner_model(cfg)) if _planner_enabled(cfg) else None,
     }
 
 

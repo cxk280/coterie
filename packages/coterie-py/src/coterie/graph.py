@@ -21,6 +21,7 @@ def build_graph(
     judge_llm: LLMClient | None = None,
     consensus_llm: LLMClient | None = None,
     moderator_llm: LLMClient | None = None,
+    planner_llm: LLMClient | None = None,
 ):
     mode = config.get("mode")
     if not mode:
@@ -38,4 +39,5 @@ def build_graph(
         judge_llm=judge_llm,
         consensus_llm=consensus_llm,
         moderator_llm=moderator_llm,
+        planner_llm=planner_llm,
     )

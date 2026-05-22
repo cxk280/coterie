@@ -12,8 +12,17 @@ from coterie.core.llm.base import LLMClient
 from coterie.core.registry import register_mode
 from coterie.core.state import CoterieState
 from coterie.nodes.agent_runner import make_agent_runner
-from coterie.nodes.planner import make_planner_node
+from coterie.nodes.planner import make_llm_planner_node, make_planner_node
 from coterie.nodes.supervisor import make_step_advance_node, make_supervisor_node
+
+
+def _planner_node(config: dict, planner_llm: LLMClient | None):
+    planner_cfg = config.get("planner") or {}
+    if planner_cfg.get("enabled") and planner_llm is not None:
+        return make_llm_planner_node(
+            planner_llm, max_subtasks=planner_cfg.get("max_subtasks", 5)
+        )
+    return make_planner_node()
 
 
 @register_mode("single")
@@ -23,10 +32,11 @@ def build(
     executor: AdapterExecutor,
     config: dict,
     supervisor_llm: LLMClient | None = None,
+    planner_llm: LLMClient | None = None,
     **_,
 ):
     g: StateGraph = StateGraph(CoterieState)
-    g.add_node("planner", make_planner_node())
+    g.add_node("planner", _planner_node(config, planner_llm))
     g.add_node("supervisor", make_supervisor_node(supervisor_llm))
     g.add_node(
         "agent",
