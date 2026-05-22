@@ -1,0 +1,18 @@
+id: extract-timeout-constant
+category: refactor
+prompt: "Extract the magic number 30000 in src/api/client.py into a TIMEOUT_MS constant."
+expected_modes:
+  - single
+  - adversarial
+workdir_setup:
+  src/api/client.py: |
+    TIMEOUT_MS = 30000
+
+
+    def fetch(url):
+        return _http_get(url, timeout=TIMEOUT_MS)
+graders:
+  - kind: file_contains
+    path: src/api/client.py
+    text: TIMEOUT_MS
+  - kind: status_done

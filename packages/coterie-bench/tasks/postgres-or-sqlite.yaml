@@ -1,0 +1,8 @@
+id: postgres-or-sqlite
+category: decision
+prompt: "Postgres or SQLite for the orders DB on a 50k MAU app? Argue both sides."
+expected_modes:
+  - debate
+workdir_setup: {}
+graders:
+  - kind: status_done

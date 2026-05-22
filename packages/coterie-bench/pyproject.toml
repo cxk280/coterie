@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coterie-bench"
+version = "0.1.0"
+description = "Benchmark harness: runs a corpus of tasks through every Coterie mode and emits cost / quality / latency curves."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Chris King", email = "chris@cking.me"}]
+dependencies = [
+  "coterie",
+  "click>=8.1",
+  "rich>=13.7",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.9"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+coterie-bench = "coterie_bench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/coterie_bench"]
