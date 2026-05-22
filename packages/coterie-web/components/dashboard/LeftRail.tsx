@@ -20,7 +20,7 @@ export function LeftRail() {
       {RECENT_RUNS.map((run) => (
         <a
           key={run.id}
-          href={`/runs/${run.id}` as const}
+          href={`/runs/${run.id}`}
           className="flex flex-col gap-1 rounded-md px-3 py-2.5 transition hover:opacity-90"
           style={{ background: "var(--color-bg-canvas)" }}
         >

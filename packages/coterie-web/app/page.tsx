@@ -1,7 +1,10 @@
+import Link from "next/link";
+
 import { Header } from "@/components/ui/Header";
 import { LeftRail } from "@/components/dashboard/LeftRail";
 import { ModeGrid } from "@/components/dashboard/ModeGrid";
 import { AgentCard } from "@/components/dashboard/AgentCard";
+import { RunButton } from "@/components/dashboard/RunButton";
 import { Button } from "@/components/ui/Button";
 
 export default function DashboardPage() {
@@ -116,10 +119,27 @@ export default function DashboardPage() {
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pb-12">
-            <Button>Cancel</Button>
-            <Button variant="primary" modeColor="adversarial">
-              Run <span className="font-mono">▶</span>
-            </Button>
+            <Link href="/runs">
+              <Button>Cancel</Button>
+            </Link>
+            <RunButton
+              task="Refactor src/auth.ts to remove the legacy session middleware. Preserve the public API and add tests for the new code path."
+              mode="adversarial"
+              config={{
+                version: 1,
+                agents: [
+                  { id: "claude-code", adapter: "claude-code", strengths: ["planning", "refactor"] },
+                  { id: "codex", adapter: "codex", strengths: ["adversarial-review", "edge-cases"] },
+                ],
+                adversarial: {
+                  implementer: "claude-code",
+                  auditor: "codex",
+                  judge: { model: "claude-opus-4-7", sustain_threshold: "medium" },
+                  max_rounds: 3,
+                },
+                budget: { max_usd_per_task: 5.0 },
+              }}
+            />
           </div>
         </main>
       </div>
