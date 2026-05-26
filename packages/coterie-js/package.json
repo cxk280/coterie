@@ -41,6 +41,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "lint": "eslint src",
     "dev": "tsx src/cli.ts",
     "prepublishOnly": "npm run build"
