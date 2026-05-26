@@ -126,19 +126,16 @@ async def _cleanup_loop(store: Store) -> None:
 
 app = FastAPI(title="Coterie API", version="0.1.0", lifespan=lifespan)
 
-# slowapi: attach the shared limiter + 429 handler.
-from slowapi.errors import RateLimitExceeded  # noqa: E402
+# Uniform {error, code, request_id, detail} envelope for every error path,
+# including the slowapi 429 (RateLimitExceeded) handler.
+from coterie_api.errors import install_error_handlers  # noqa: E402
+
+install_error_handlers(app)
+
+# slowapi: attach the shared limiter + middleware.
 from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
 
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded,
-    lambda request, exc: JSONResponse(
-        status_code=429,
-        content={"error": "rate_limited", "detail": str(exc.detail)},
-        headers={"Retry-After": str(int(getattr(exc, "retry_after", 60) or 60))},
-    ),
-)
 app.add_middleware(SlowAPIMiddleware)
 
 from coterie_api.logging_setup import RequestIdMiddleware  # noqa: E402

@@ -55,6 +55,11 @@ def test_modes_requires_auth(client):
     # TestClient host is "testclient" — not localhost — so auth applies.
     r = client.get("/api/modes")
     assert r.status_code == 401
+    body = r.json()
+    assert body["error"] == "unauthorized"
+    assert body["code"] == 401
+    assert body["request_id"]
+    assert r.headers["X-Request-Id"] == body["request_id"]
 
 
 def test_modes_authenticated(client):
@@ -82,6 +87,22 @@ def test_runs_pagination(client):
 def test_delete_missing_run_returns_404(client):
     r = client.delete("/api/runs/nope", headers=auth(client))
     assert r.status_code == 404
+    body = r.json()
+    assert body["error"] == "not_found"
+    assert body["code"] == 404
+    assert body["request_id"] and r.headers["X-Request-Id"] == body["request_id"]
+
+
+def test_validation_error_envelope(client):
+    """A malformed create-run body returns the uniform 422 envelope."""
+    r = client.post("/api/runs", headers=auth(client), json={"mode": "single"})
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"] == "validation_error"
+    assert body["code"] == 422
+    assert body["request_id"]
+    # detail carries the structured pydantic validation errors.
+    assert isinstance(body["detail"], list) and body["detail"]
 
 
 def test_resume_missing_run_returns_404(client):
