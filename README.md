@@ -35,17 +35,31 @@ turn is **$0 metered**: no API keys, no pay-as-you-go.
 ## Requirements
 
 - **Node.js ≥ 20** and **git**.
-- At least the two default agent CLIs, installed and signed in to their
-  subscriptions (Coterie runs a startup check and tells you if any are missing):
+- **At least two** of the agent CLIs below, installed and signed in — Coterie
+  coordinates multiple agents, so it needs two to deliberate, but *any* two will
+  do and it'll use all you have (more agents can be added over time):
 
 | Agent | Install | Sign in |
 |---|---|---|
 | **Claude Code** | `npm install -g @anthropic-ai/claude-code` | run `claude`, sign in to Claude (Max/Pro) |
 | **Codex** | `npm install -g @openai/codex` | run `codex`, sign in with your ChatGPT account |
-| **Cursor** *(optional)* | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent login` |
+| **Cursor** | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent login` |
 
-No `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` needed — and if one is set, the agents
-still use your subscription (Coterie strips it from the agent's environment).
+Run **`coterie doctor`** any time to see which are installed and signed in:
+
+```
+$ coterie doctor
+  ✓ claude        — ready
+  ✓ codex         — ready
+  ✗ cursor-agent  — not installed
+  2 of 3 ready — good to go.
+```
+
+**Coterie needs no config of its own for any of this.** It finds each CLI on your
+`PATH` and lets it read its own credentials, so it authenticates exactly as your
+shell does — whatever works in your terminal works here. No `ANTHROPIC_API_KEY` /
+`OPENAI_API_KEY` needed; if one is set, the agents still use your subscription
+(Coterie strips it from the agent's environment).
 
 ## Install
 
@@ -63,7 +77,8 @@ npm link           # puts `coterie` on your PATH globally
 Verify:
 
 ```bash
-coterie --help     # should list `chat` and `run`
+coterie --help     # should list `chat`, `run`, and `doctor`
+coterie doctor     # checks you have at least two agent CLIs ready
 ```
 
 ## Use it
