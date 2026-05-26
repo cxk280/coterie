@@ -15,9 +15,10 @@ State is signed with itsdangerous to prevent CSRF.
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import HTTPException, Request
@@ -27,17 +28,46 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from coterie_api.auth import SESSION_COOKIE, _store
 from coterie_api.users import create_session, upsert_github_user
 
+logger = logging.getLogger("coterie_api.oauth")
+
 CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 TOKEN_URL = "https://github.com/login/oauth/access_token"
 USER_URL = "https://api.github.com/user"
 WEB_BASE = os.environ.get("COTERIE_WEB_BASE", "http://localhost:3000")
-STATE_SECRET = os.environ.get("COTERIE_API_STATE_SECRET") or os.environ.get(
-    "COTERIE_API_TOKEN", "coterie-dev-only-state-secret"
-)
+
+
+def _resolve_state_secret() -> str:
+    """The OAuth state signer's key. Prefer an explicit env secret; otherwise
+    generate a random per-process one. We never fall back to a hardcoded or
+    shared value — a predictable state secret defeats the CSRF protection."""
+    explicit = os.environ.get("COTERIE_API_STATE_SECRET")
+    if explicit:
+        return explicit
+    logger.warning(
+        "COTERIE_API_STATE_SECRET not set — using an ephemeral random state "
+        "secret. OAuth logins in flight across a restart will be rejected. "
+        "Set COTERIE_API_STATE_SECRET in production."
+    )
+    return secrets.token_urlsafe(48)
+
+
+STATE_SECRET = _resolve_state_secret()
 
 _signer = URLSafeTimedSerializer(STATE_SECRET, salt="github-oauth-state")
+
+
+def _safe_next(next_path: str | None) -> str:
+    """Only allow same-origin relative redirects. Anything that could resolve
+    to another origin (scheme, host, userinfo via ``@``, protocol-relative
+    ``//``, or backslash tricks) collapses to ``/``."""
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return "/"
+    parts = urlsplit(next_path)
+    if parts.scheme or parts.netloc or "\\" in next_path:
+        return "/"
+    return next_path
 
 
 def github_enabled() -> bool:
@@ -104,7 +134,7 @@ async def callback(request: Request, code: str | None, state: str | None) -> Red
     )
     session_id = create_session(store, user.id)
 
-    target = payload.get("next") or "/"
+    target = _safe_next(payload.get("next"))
     redirect = RedirectResponse(f"{WEB_BASE}{target}")
     redirect.set_cookie(
         SESSION_COOKIE,

@@ -499,3 +499,30 @@ def test_provider_test_rejects_unknown_provider(client):
     )
     assert r.status_code == 422
     assert r.json()["error"] == "validation_error"
+
+
+def test_validation_error_does_not_echo_submitted_values(client):
+    """The 422 envelope must not reflect submitted input back (it could carry a
+    real api_key). Each error keeps only loc/msg/type."""
+    secret = "sk-super-secret-key-value"
+    r = client.post(
+        "/api/auth/providers/test",
+        headers=auth(client),
+        json={"provider": "bogus", "api_key": secret},
+    )
+    assert r.status_code == 422
+    assert secret not in r.text
+    for err in r.json()["detail"]:
+        assert set(err).issubset({"loc", "msg", "type"})
+
+
+def test_oauth_next_sanitization():
+    """`next` is restricted to same-origin relative paths."""
+    from coterie_api.oauth import _safe_next
+
+    assert _safe_next("/runs/abc") == "/runs/abc"
+    assert _safe_next(None) == "/"
+    assert _safe_next("//evil.com") == "/"
+    assert _safe_next("https://evil.com") == "/"
+    assert _safe_next("/\\evil.com") == "/"
+    assert _safe_next("@evil.com") == "/"
