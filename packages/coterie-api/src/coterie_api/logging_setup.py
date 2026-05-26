@@ -73,6 +73,10 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         rid = request.headers.get(self.HEADER) or uuid.uuid4().hex[:16]
+        # Stash on request.state too: the ContextVar is reset in `finally` as an
+        # exception unwinds, so a 500 caught by the outer ServerErrorMiddleware
+        # can no longer read it from the ContextVar — but request.state survives.
+        request.state.request_id = rid
         token = _request_id.set(rid)
         try:
             response = await call_next(request)
