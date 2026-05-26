@@ -32,19 +32,9 @@ describe("ClaudeCliClient", () => {
   });
 });
 
-describe("buildLLM coordination routing", () => {
-  afterEach(() => {
-    delete process.env.COTERIE_COORDINATION_PROVIDER;
-  });
-
-  it("routes coordination through the CLI client when COTERIE_COORDINATION_PROVIDER=claude-cli", async () => {
-    process.env.COTERIE_COORDINATION_PROVIDER = "claude-cli";
-    const client = await buildLLM("claude-opus-4-7");
-    expect(client).toBeInstanceOf(ClaudeCliClient);
-  });
-
-  it("defaults to the API-backed client", async () => {
-    const client = await buildLLM("claude-haiku-4-5");
-    expect(client).not.toBeInstanceOf(ClaudeCliClient);
+describe("buildLLM coordination", () => {
+  it("always builds the subscription CLI client — no pay-as-you-go API backend", async () => {
+    expect(await buildLLM("claude-opus-4-7")).toBeInstanceOf(ClaudeCliClient);
+    expect(await buildLLM(undefined)).toBeInstanceOf(ClaudeCliClient);
   });
 });

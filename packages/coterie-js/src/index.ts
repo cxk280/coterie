@@ -25,8 +25,8 @@ export type {
   Status,
 } from "./core/state.js";
 export type { LLMClient, LLMMessage } from "./core/llm/base.js";
-export { AnthropicClient } from "./core/llm/anthropicClient.js";
-export { GroqClient, OpenAIClient, XAIClient } from "./core/llm/openaiCompat.js";
+export { buildLLM } from "./core/llm/build.js";
+export { ClaudeCliClient } from "./core/llm/claudeCli.js";
 export { ScriptedLLMClient, ScriptedLLMError } from "./core/llm/scripted.js";
 export {
   type AdapterExecutor,

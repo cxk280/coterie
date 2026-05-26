@@ -63,12 +63,11 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
 
   const transcript = new Transcript();
   const trace = new Trace(!opts.quiet);
-  const onSub = process.env.COTERIE_COORDINATION_PROVIDER === "claude-cli";
 
   console.log(kleur.cyan().bold("▲ coterie chat"));
   console.log(
     kleur.dim(
-      `  mode=${mode} · workdir=${opts.workdir} · coordination=${onSub ? "subscription (claude -p)" : "API"}\n` +
+      `  mode=${mode} · workdir=${opts.workdir} · coordination=subscription (claude -p)\n` +
         "  Every turn runs a multi-agent round behind the scenes. /help for commands.",
     ),
   );

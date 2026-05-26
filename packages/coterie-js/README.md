@@ -49,8 +49,7 @@ Then, in any repo you want it to work in:
 
 ```bash
 cd ~/my-project
-export COTERIE_COORDINATION_PROVIDER=claude-cli   # coordination on your Claude sub too → $0 metered
-coterie chat
+coterie chat        # runs entirely on your subscriptions — $0 metered
 ```
 
 ## How it works
@@ -75,17 +74,20 @@ responses.
 
 ## Runs on your subscriptions ($0 metered)
 
-The agent CLIs run on your existing logins — **Claude Max**, **ChatGPT** (Codex),
-and **Cursor Pro** — not pay-per-token API keys. Set
-`COTERIE_COORDINATION_PROVIDER=claude-cli` and the behind-the-scenes coordination
-(routing/judging) also runs on your Claude subscription, so a full turn is $0
-metered. On startup `coterie chat` checks each required CLI is installed and
-signed in, and tells you exactly what to do if not.
+Everything runs on your existing logins — the agents on **Claude Max**, **ChatGPT**
+(Codex), and **Cursor Pro**, and the behind-the-scenes coordination (routing /
+judging / moderating) on your **Claude subscription** via `claude -p`. So a full
+turn is **$0 metered** — no setup, no flags. On startup `coterie chat` checks each
+required CLI is installed and signed in, and tells you exactly what to do if not.
 
-> **Grok is deferred.** Unlike Claude, Codex, and Cursor, Grok has no
-> subscription-backed headless coding CLI — the only path is the pay-as-you-go
-> xAI API, which breaks the zero-metered-cost model. It'll be added if/when a
-> subscription CLI exists.
+> **No pay-as-you-go API backend (yet).** Coordination is subscription-only by
+> design, so a session can never run up a surprise metered bill. A pluggable API
+> provider (Anthropic / OpenAI-compatible) may be added later for environments
+> without the subscription CLIs — it's intentionally not wired in today.
+
+> **Grok is deferred** for the same reason: unlike Claude / Codex / Cursor it has
+> no subscription-backed headless coding CLI (only the pay-as-you-go xAI API), so
+> it can't join the $0-metered lineup yet.
 
 ## Commands
 
