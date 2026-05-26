@@ -32,7 +32,7 @@ function toRunSummary(r: ApiRunSummary): RunSummary {
     task: r.task,
     mode: r.mode,
     agents: r.agents,
-    duration_s: r.duration_s,
+    duration_s: r.duration_s ?? null,
     cost_usd: r.spend_usd,
     status,
     status_reason: r.status_reason ?? undefined,

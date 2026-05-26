@@ -7,7 +7,13 @@
  * bearer token. Localhost requests can also bypass auth — see auth.py.
  */
 
+import type { components } from "./api-types";
+
 const BASE = process.env.NEXT_PUBLIC_COTERIE_API_URL ?? "http://127.0.0.1:8000";
+
+/** Server response/request models, generated from the FastAPI OpenAPI schema
+ *  (`npm run gen:api`). Do not hand-edit these to track the server — regenerate. */
+type Schemas = components["schemas"];
 
 function token(): string | undefined {
   // Prefer the server-only var when called from a server component.
@@ -19,29 +25,18 @@ function authHeaders(): HeadersInit {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-export interface ApiRunSummary {
-  id: string;
-  task: string;
-  mode: "single" | "consensus" | "adversarial" | "debate" | "tournament";
-  status: "queued" | "running" | "awaiting_human" | "done" | "failed" | "rejected";
-  status_reason: string | null;
-  agents: string[];
-  spend_usd: number;
-  duration_s: number | null;
-  owner_id: string | null;
-  trace_id: string | null;
-  trace_url: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Generated server models (single source of truth: the API's OpenAPI schema).
+export type ApiRunSummary = Schemas["RunSummary"];
+export type ApiRunListResponse = Schemas["RunListResponse"];
+export type ApiRunDetail = Schemas["RunDetail"];
+export type MeResponse = Schemas["MeResponse"];
+export type TokenSummary = Schemas["TokenSummary"];
+export type CreateTokenResponse = Schemas["CreateTokenResponse"];
+export type CreateRunBody = Schemas["CreateRunRequest"];
+export type ResumeDecision = Schemas["ResumeRequest"]["decision"];
 
-export interface ApiRunListResponse {
-  items: ApiRunSummary[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
+// Client-side convenience shapes for endpoints the server returns as untyped
+// objects (`list[dict]`), so they have no generated schema.
 export interface ApiAgentRun {
   agent_id: string;
   role: string;
@@ -53,28 +48,9 @@ export interface ApiAgentRun {
   cost_estimate_usd?: number | null;
 }
 
-export interface ApiRunDetail {
-  summary: ApiRunSummary;
-  config: Record<string, unknown>;
-  runs: ApiAgentRun[];
-  route_history: Array<Record<string, unknown>>;
-  judge_history: Array<Record<string, unknown>>;
-  mode_state: Record<string, unknown>;
-  final_state: Record<string, unknown> | null;
-  current_state: Record<string, unknown> | null;
-}
-
 export interface ApiAdapter {
   name: string;
 }
-
-export interface CreateRunBody {
-  task: string;
-  mode: ApiRunSummary["mode"];
-  config: Record<string, unknown>;
-}
-
-export type ResumeDecision = "approve" | "reject";
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -125,31 +101,10 @@ export const api = {
   authToken: () => get<{ token: string }>("/api/auth/token"),
   rotateToken: () => post<{ token: string }>("/api/auth/rotate", {}),
   logout: () => post<{ status: string }>("/api/auth/logout", {}),
-  me: () =>
-    get<{
-      id: string;
-      kind: "github" | "dev" | "service";
-      login: string | null;
-      name: string | null;
-      avatar_url: string | null;
-      is_admin: boolean;
-    }>("/api/auth/me"),
-  listTokens: () =>
-    get<
-      Array<{
-        id: string;
-        name: string;
-        prefix: string;
-        created_at: string;
-        last_used_at: string | null;
-        revoked: boolean;
-      }>
-    >("/api/auth/tokens"),
+  me: () => get<MeResponse>("/api/auth/me"),
+  listTokens: () => get<TokenSummary[]>("/api/auth/tokens"),
   createToken: (name: string) =>
-    post<{ id: string; name: string; prefix: string; token: string; created_at: string }>(
-      "/api/auth/tokens",
-      { name },
-    ),
+    post<CreateTokenResponse>("/api/auth/tokens", { name }),
   revokeToken: (id: string) => del<{ status: string; id: string }>(`/api/auth/tokens/${id}`),
   /** EventSource URL. Token must be in the query string for SSE since EventSource can't set headers. */
   eventsUrl: (id: string) => {
