@@ -108,5 +108,12 @@ coterie chat --quiet                            # hide the agent exchanges
 coterie run "find every bug in src/auth.ts" --config examples/consensus.coterie.yaml
 ```
 
+## Test
+
+```bash
+npm test            # fast, offline, deterministic — the CI gate
+npm run test:e2e    # real-agent end-to-end (spends subscription calls; needs claude + codex signed in)
+```
+
 See the [top-level README](../../README.md) for architecture, the five modes in
-depth, and the Python sibling package.
+depth, and the full breakdown of the three test layers.

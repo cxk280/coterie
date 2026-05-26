@@ -147,9 +147,24 @@ and prints the result.
 
 ```bash
 cd packages/coterie-js
-npm test            # vitest — fully offline (FakeAdapter + ScriptedLLMClient, no CLIs/network)
 npm run build       # tsc → dist/
+npm test            # fast suite — offline + deterministic; this is the CI gate
+npm run test:e2e    # real-agent end-to-end — drives the actual `coterie chat`
 ```
+
+Three test layers:
+
+- **Unit** — pure logic + preflight, fully offline (`spawnSync`/`fs` mocked, plus
+  `FakeAdapter` + `ScriptedLLMClient`). Deterministic.
+- **Black-box** (`tests/cli.blackbox.test.ts`) — spawns the built `coterie` with a
+  sandboxed `PATH`/`HOME` to assert real exit codes and the missing-CLI
+  remediation, without touching any network or real agent.
+- **End-to-end** (`tests/e2e/`, run via `npm run test:e2e`) — drives the real
+  `coterie chat` against Claude Code + Codex **on your subscriptions**, asserting
+  that file edits actually land and replies are prose. It spends subscription
+  calls and is nondeterministic, so it's excluded from `npm test` and the CI gate
+  and **self-skips** unless both CLIs are installed and signed in. CI can't run it
+  (it can't hold your logins) — run it locally before a release.
 
 ## License
 
