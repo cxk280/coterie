@@ -13,6 +13,25 @@
 
 ---
 
+## Talk to it: `coterie chat`
+
+```bash
+npm install -g coterie
+coterie chat
+```
+
+A conversational terminal assistant that *feels* like one coding agent — but
+**every prompt runs through a multi-agent coordination round** (debate /
+adversarial / tournament / consensus / single) behind the scenes, so each reply
+is the product of a reliability-raising round, not a single model's first guess.
+Switch strategy per prompt with `/mode`. It edits your repo when asked and
+answers when asked.
+
+It drives the **real coding-agent CLIs you already have — Claude Code + Codex
+(Cursor optional) — on your subscriptions**, and the behind-the-scenes
+coordination can run on your Claude subscription too, so a full turn is **$0
+metered**. Full usage: [packages/coterie-js/README.md](packages/coterie-js/README.md).
+
 ## What's different about this
 
 The 2026 multi-CLI orchestrator space is crowded. Every other tool gives you

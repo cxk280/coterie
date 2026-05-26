@@ -1,7 +1,7 @@
 {
   "name": "coterie",
   "version": "0.1.0",
-  "description": "A LangGraph orchestrator for heterogeneous coding agents (Claude Code, Codex, Cursor, Aider) and dev tools.",
+  "description": "Conversational meta-agent for your terminal: every prompt runs through a multi-agent coordination round (debate, adversarial, tournament, consensus) over Claude Code + Codex, on your subscriptions.",
   "license": "MIT",
   "author": "Chris King <chris@cking.me>",
   "homepage": "https://coterie.dev",
@@ -42,7 +42,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "dev": "tsx src/cli.ts"
+    "dev": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=20"
