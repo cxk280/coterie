@@ -5,8 +5,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from coterie_bench.corpus import DEFAULT_CORPUS_DIR, load_corpus
-from coterie_bench.report import summarize, write_pareto_plot, write_summary_csv
+from coterie_bench.corpus import load_corpus
+from coterie_bench.report import summarize, write_pareto_plot
 from coterie_bench.runner import run_bench
 
 

@@ -17,8 +17,7 @@ import secrets
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
 from coterie_api.store import Store
 
@@ -57,7 +56,7 @@ class TokenRecord:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _hash(secret: str) -> str:
@@ -151,7 +150,7 @@ def upsert_github_user(store: Store, *, github_id: int, login: str, name: str | 
 
 def create_session(store: Store, user_id: str) -> str:
     session_id = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(days=SESSION_DAYS)
     with store._conn() as c:
         c.execute(

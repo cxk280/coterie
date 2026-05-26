@@ -21,7 +21,8 @@ Budget enforcement runs before each execute:
 """
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from coterie.adapters.base import CLIAdapter
 from coterie.core.executor import AdapterExecutor

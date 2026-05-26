@@ -8,8 +8,6 @@ the user's real ~/.coterie/runs.sqlite.
 """
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -108,6 +106,7 @@ def test_token_rotate(client):
 def test_create_run_with_fake_adapter(client):
     """Smoke: kick off a run with the fake adapter (no API key needed) and let it complete."""
     import time
+
     from coterie.adapters.base import AdapterResult
     from coterie.adapters.fake import FakeAdapter
 
@@ -144,6 +143,7 @@ def test_create_run_with_fake_adapter(client):
 def test_runs_filter_by_mode(client):
     """list_runs?mode= filters by mode."""
     import time
+
     from coterie.adapters.base import AdapterResult
     from coterie.adapters.fake import FakeAdapter
 
@@ -177,6 +177,7 @@ def test_runs_filter_by_mode(client):
 def test_compact_run_auto_runs_on_terminal(client):
     """After a run terminates, the runner auto-compacts so a manual compact removes zero rows."""
     import time
+
     from coterie.adapters.base import AdapterResult
     from coterie.adapters.fake import FakeAdapter
 
@@ -207,8 +208,8 @@ def test_compact_run_auto_runs_on_terminal(client):
 
 def test_runner_uses_persistent_checkpointer(client):
     """Smoke: the runner holds a SqliteSaver (not the in-memory variant)."""
-    from langgraph.checkpoint.sqlite import SqliteSaver
     from coterie_api.main import app
+    from langgraph.checkpoint.sqlite import SqliteSaver
 
     assert isinstance(app.state.runner._checkpointer, SqliteSaver)
 
@@ -369,6 +370,7 @@ def test_personal_access_token_round_trip(client):
 def test_run_ownership_admin_sees_all(client):
     """Service user (admin) sees runs owned by anyone."""
     import time
+
     from coterie.adapters.base import AdapterResult
     from coterie.adapters.fake import FakeAdapter
 

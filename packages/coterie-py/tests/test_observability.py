@@ -80,8 +80,8 @@ def test_span_for_agent_records_outcome(in_memory_spans):
 
 def test_setup_tracing_is_off_by_default(monkeypatch):
     """No env vars + no override → tracing stays in no-op mode."""
-    from coterie.observability import setup_tracing
     import coterie.observability.tracer as tracer_mod
+    from coterie.observability import setup_tracing
 
     for k in (
         "LANGFUSE_PUBLIC_KEY",
@@ -104,8 +104,8 @@ def test_setup_tracing_is_off_by_default(monkeypatch):
 
 def test_langfuse_exporter_builds_when_keys_present(monkeypatch):
     """With LANGFUSE_* env vars present, the exporter is wired and the URL template is set."""
-    from coterie.observability import setup_tracing, trace_url_for
     import coterie.observability.tracer as tracer_mod
+    from coterie.observability import setup_tracing, trace_url_for
 
     monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3001")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")

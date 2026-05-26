@@ -9,11 +9,11 @@ contaminate the eval.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from coterie_bench.corpus import GraderSpec
-
 
 GraderResult = tuple[bool, str]
 GraderFn = Callable[[GraderSpec, Path, dict[str, Any]], GraderResult]

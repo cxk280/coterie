@@ -30,7 +30,7 @@ def test_checkpoint_pauses_before_agent(initial_state):
     thread = _thread_config()
 
     state = initial_state("x", cfg)
-    paused_result = graph.invoke(state, config=thread)
+    graph.invoke(state, config=thread)
 
     # The agent didn't run yet.
     assert FakeAdapter.invocations_for("a") == []

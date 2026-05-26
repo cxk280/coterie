@@ -5,7 +5,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 Mode = Literal["single", "consensus", "adversarial", "debate", "tournament"]
 RunStatus = Literal[
     "queued",

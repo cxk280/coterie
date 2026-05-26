@@ -9,7 +9,6 @@ from coterie.core.llm.scripted import ScriptedLLMClient
 from coterie.graph import build_graph
 
 
-
 def test_three_way_tournament(initial_state):
     FakeAdapter.script("a", [AdapterResult("solution A", "", 0, cost_estimate_usd=0.05)])
     FakeAdapter.script("b", [AdapterResult("solution B", "", 0, cost_estimate_usd=0.10)])

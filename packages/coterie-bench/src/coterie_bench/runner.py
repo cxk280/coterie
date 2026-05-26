@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import csv
 import time
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from coterie.core.executor import IsolatedWorktreeExecutor, LocalSubprocessExecutor
 from coterie.graph import build_graph

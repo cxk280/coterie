@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 @dataclass
@@ -75,8 +75,6 @@ def write_pareto_plot(summaries: Iterable[ModeSummary], path: Path) -> Path | No
     fig, ax = plt.subplots(figsize=(8, 5), facecolor="#0a0b0d")
     ax.set_facecolor("#14161a")
 
-    xs = [s.avg_cost_usd for s in summaries]
-    ys = [s.avg_score for s in summaries]
     for s in summaries:
         ax.scatter(s.avg_cost_usd, s.avg_score, s=140, label=s.mode)
         ax.annotate(

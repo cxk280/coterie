@@ -9,7 +9,6 @@ from coterie.core.llm.scripted import ScriptedLLMClient
 from coterie.graph import build_graph
 
 
-
 def test_single_round_debate(initial_state):
     FakeAdapter.script("pro-agent", [AdapterResult("Postgres scales better.", "", 0)])
     FakeAdapter.script("con-agent", [AdapterResult("SQLite is simpler to operate.", "", 0)])

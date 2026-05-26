@@ -187,7 +187,7 @@ def _mock_stdout(task: BenchTask, mode: str, agent_id: str) -> str:
     """
     if mode in ("adversarial", "tournament", "single") and task.category == "refactor":
         # Pretend we wrote the result; the graders apply mutations below.
-        for rel_path, original in task.workdir_setup.items():
+        for _rel_path, original in task.workdir_setup.items():
             # No-op: FakeAdapter doesn't have FS side effects, so refactor
             # graders that probe the workdir will reflect the seeded content.
             _ = original

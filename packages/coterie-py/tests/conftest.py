@@ -6,7 +6,6 @@ initial CoterieState dict for `graph.invoke()`.
 """
 
 import pytest
-
 from coterie.adapters.fake import FakeAdapter
 
 

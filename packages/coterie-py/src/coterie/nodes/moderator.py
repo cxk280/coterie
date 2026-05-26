@@ -79,7 +79,7 @@ def make_debate_judge_node(llm: LLMClient | None = None):
         con_runs = [r for r in runs if r.get("role") == "con"]
         transcript = "\n\n".join(
             f"Round {i + 1}\nPRO: {p['stdout'][:800]}\nCON: {c['stdout'][:800]}"
-            for i, (p, c) in enumerate(zip(pro_runs, con_runs))
+            for i, (p, c) in enumerate(zip(pro_runs, con_runs, strict=False))
         )
 
         if llm is None:

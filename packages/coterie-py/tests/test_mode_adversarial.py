@@ -15,7 +15,6 @@ from coterie.core.llm.scripted import ScriptedLLMClient
 from coterie.graph import build_graph
 
 
-
 def _cfg(max_rounds: int = 3) -> dict:
     return {
         "version": 1,

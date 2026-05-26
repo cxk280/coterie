@@ -12,7 +12,7 @@ Admin / service users bypass the cap entirely.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
 
@@ -62,9 +62,9 @@ def _period_stale(period_start_iso: str | None) -> bool:
         ts = datetime.fromisoformat(period_start_iso)
     except ValueError:
         return True
-    return ts < datetime.now(timezone.utc) - timedelta(hours=24)
+    return ts < datetime.now(UTC) - timedelta(hours=24)
 
 
 def _next_midnight_utc() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(seconds=1)

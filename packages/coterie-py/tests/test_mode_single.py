@@ -9,7 +9,6 @@ from coterie.core.llm.scripted import ScriptedLLMClient
 from coterie.graph import build_graph
 
 
-
 def test_single_mode_round_robin_no_llm(initial_state):
     """Without router LLM, round-robin selects first agent."""
     FakeAdapter.script("a", [AdapterResult("output", "", 0, cost_estimate_usd=0.01)])

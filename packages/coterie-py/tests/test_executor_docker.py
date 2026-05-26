@@ -9,7 +9,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from coterie.adapters.base import AdapterResult, CLIAdapter
 
 
@@ -67,9 +66,11 @@ def test_docker_executor_cleans_up_even_on_failure(tmp_path):
             raise RuntimeError("simulated docker run failure")
         return MagicMock(stdout="", stderr="", returncode=0)
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(RuntimeError, match="simulated"):
-            ex.execute(adapter, "hello", str(tmp_path), timeout_s=10)
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(RuntimeError, match="simulated"),
+    ):
+        ex.execute(adapter, "hello", str(tmp_path), timeout_s=10)
 
     # Cleanup runs in finally — both calls happen.
     assert call_count["n"] == 2

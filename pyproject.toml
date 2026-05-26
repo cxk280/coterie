@@ -8,3 +8,17 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI/slowapi inject dependencies via call-in-default-argument by design.
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Header",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Cookie",
+  "fastapi.Form",
+  "fastapi.File",
+  "fastapi.Security",
+]

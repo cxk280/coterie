@@ -9,7 +9,6 @@ Slide 13 of the deck: `grep "import openai\\|import docker" core/` should return
 import os
 import sys
 import uuid
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -108,7 +107,7 @@ def _build_executor(cfg: dict) -> AdapterExecutor:
     return LocalSubprocessExecutor()
 
 
-def _build_llms(cfg: dict) -> dict[str, Optional[LLMClient]]:
+def _build_llms(cfg: dict) -> dict[str, LLMClient | None]:
     """Build per-role LLMs. None entries mean 'this role isn't needed for the chosen mode'."""
     return {
         "supervisor_llm": _build_llm(_supervisor_model(cfg)) if cfg.get("mode") == "single" else None,
@@ -167,10 +166,7 @@ def run(task: str, config_path: str, workdir: str) -> None:
     cli_run_id = f"cli-{uuid.uuid4().hex[:12]}"
     with span_for_run(run_id=cli_run_id, mode=mode, task=task):
         has_checkpoints = any((cfg.get("checkpoints") or {}).values())
-        if has_checkpoints:
-            final = _run_with_checkpoints(graph, initial)
-        else:
-            final = graph.invoke(initial)
+        final = _run_with_checkpoints(graph, initial) if has_checkpoints else graph.invoke(initial)
 
     _render_summary(mode, final)
     sys.exit(0 if final.get("status") == "done" else 1)

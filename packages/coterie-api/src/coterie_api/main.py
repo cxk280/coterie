@@ -10,18 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
-from sse_starlette.sse import EventSourceResponse
-
 import coterie  # noqa: F401  (trigger registry side effects)
 from coterie.core.registry import ADAPTER_REGISTRY, MODE_REGISTRY
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 
 from coterie_api import oauth
 from coterie_api.auth import (
@@ -32,8 +31,6 @@ from coterie_api.auth import (
     ensure_owner_or_admin,
     rotate_token,
 )
-from coterie_api.quotas import check_budget, record_spend
-from coterie_api.rate_limit import limiter, rate_limited, user_rate_limit_key
 from coterie_api.models import (
     CreateRunRequest,
     CreateTokenRequest,
@@ -45,6 +42,8 @@ from coterie_api.models import (
     RunSummary,
     TokenSummary,
 )
+from coterie_api.quotas import check_budget
+from coterie_api.rate_limit import limiter
 from coterie_api.runner import Runner
 from coterie_api.store import Store, cutoff_for
 from coterie_api.users import (
@@ -95,10 +94,8 @@ async def lifespan(app: FastAPI):
     finally:
         if cleanup_task is not None:
             cleanup_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError, Exception):
                 await cleanup_task
-            except (asyncio.CancelledError, Exception):
-                pass
 
 
 async def _cleanup_loop(store: Store) -> None:
@@ -422,4 +419,4 @@ def _to_summary(run: dict) -> RunSummary:
 
 
 def _parse_dt(s: str) -> datetime:
-    return datetime.fromisoformat(s).astimezone(timezone.utc)
+    return datetime.fromisoformat(s).astimezone(UTC)

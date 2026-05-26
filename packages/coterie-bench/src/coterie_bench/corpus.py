@@ -56,7 +56,7 @@ class BenchTask:
     )
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "BenchTask":
+    def from_dict(cls, raw: dict[str, Any]) -> BenchTask:
         graders = tuple(
             GraderSpec(kind=g.pop("kind"), args=g) for g in (raw.get("graders") or [])
         )

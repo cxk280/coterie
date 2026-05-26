@@ -6,10 +6,11 @@ stdlib only — no SQLAlchemy. Schema is intentionally narrow.
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_DB_PATH = Path.home() / ".coterie" / "runs.sqlite"
 
@@ -362,11 +363,11 @@ class Store:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def cutoff_for(days: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=days)
+    return datetime.now(UTC) - timedelta(days=days)
 
 
 def _build_where(

@@ -12,7 +12,8 @@ calling ``graph.stream(...)`` inside the worker thread.
 from __future__ import annotations
 
 import contextvars
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # Sink signature: (context_dict, chunk_str) -> None
 OutputSink = Callable[[dict[str, Any], str], None]

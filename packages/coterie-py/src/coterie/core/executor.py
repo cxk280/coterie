@@ -22,8 +22,9 @@ import logging
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 from coterie.adapters.base import AdapterResult, CLIAdapter
 

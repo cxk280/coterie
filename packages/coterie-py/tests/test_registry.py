@@ -1,9 +1,8 @@
 import pytest
-
 from coterie.core.registry import (
     ADAPTER_REGISTRY,
-    AlreadyRegisteredError,
     MODE_REGISTRY,
+    AlreadyRegisteredError,
     Registry,
     register_adapter,
     register_mode,

@@ -8,7 +8,7 @@ works for both.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -34,7 +34,7 @@ class CoterieClient:
 
     # ---------- lifecycle ----------
 
-    def __enter__(self) -> "CoterieClient":
+    def __enter__(self) -> CoterieClient:
         return self
 
     def __exit__(self, *a: Any) -> None:

@@ -6,8 +6,8 @@ package so unit tests and offline demos use the same implementation.
 
 import json
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from coterie.core.llm.base import LLMClient
 

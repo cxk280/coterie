@@ -14,8 +14,10 @@ Usage:
 Reset between tests with `FakeAdapter.reset_all()`.
 """
 
+import contextlib
 from collections import deque
-from typing import ClassVar, Iterable
+from collections.abc import Iterable
+from typing import ClassVar
 
 from coterie.adapters.base import AdapterResult, CLIAdapter
 from coterie.core.registry import register_adapter
@@ -78,8 +80,6 @@ class FakeAdapter(CLIAdapter):
         # chunk so downstream visualizers exercise the streaming path even in
         # tests / mock benches.
         if on_output is not None and result.stdout:
-            try:
+            with contextlib.suppress(Exception):
                 on_output(result.stdout)
-            except Exception:  # noqa: BLE001
-                pass
         return result

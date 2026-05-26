@@ -65,7 +65,6 @@ def server(tmp_path, monkeypatch):
 def test_full_stack_run_via_tui_client(server):
     from coterie.adapters.base import AdapterResult
     from coterie.adapters.fake import FakeAdapter
-
     from coterie_tui.client import CoterieClient
 
     FakeAdapter.reset_all()

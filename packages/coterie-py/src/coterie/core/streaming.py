@@ -13,6 +13,7 @@ path as a drop-in for the buffered path.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import select
@@ -21,8 +22,8 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -157,10 +158,8 @@ def _run_pty(
                 _terminate(proc)
                 exit_code = proc.wait(timeout=2.0) if proc.poll() is None else proc.returncode
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.close(master)
-        except OSError:
-            pass
 
     return StreamResult(
         stdout="".join(chunks),
@@ -175,10 +174,8 @@ def _terminate(proc: subprocess.Popen) -> None:
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError, OSError):
-        try:
+        with contextlib.suppress(Exception):
             proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
     try:
         proc.wait(timeout=2.0)
         return
@@ -187,10 +184,8 @@ def _terminate(proc: subprocess.Popen) -> None:
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
-        try:
+        with contextlib.suppress(Exception):
             proc.kill()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 # ---------- pipes fallback (Windows / non-PTY environments) ----------
@@ -241,10 +236,8 @@ def _run_pipes(
             break
         if time.monotonic() >= deadline:
             timed_out[0] = True
-            try:
+            with contextlib.suppress(Exception):
                 proc.terminate()
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 proc.wait(timeout=2.0)
             except subprocess.TimeoutExpired:

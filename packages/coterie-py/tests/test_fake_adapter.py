@@ -1,5 +1,4 @@
 import pytest
-
 from coterie.adapters.base import AdapterResult
 from coterie.adapters.fake import FakeAdapter, FakeAdapterError
 

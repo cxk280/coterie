@@ -17,13 +17,10 @@ Authenticates via the same env vars as coterie-web:
 
 from __future__ import annotations
 
-import json
-import sys
 from pathlib import Path
 
 import click
 import yaml
-from rich.live import Live
 
 from coterie_tui.client import CoterieClient
 from coterie_tui.render import (

@@ -16,6 +16,7 @@ streaming but not the latest known state.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sqlite3
 import time
@@ -23,7 +24,7 @@ import traceback
 import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -334,10 +335,8 @@ class Runner:
         await self._emit(run_id, "done", {"status": status, "duration_s": duration})
         await self._close_subscribers(run_id)
         self._handles.pop(run_id, None)
-        try:
+        with contextlib.suppress(Exception):
             self.store.compact_events(run_id)
-        except Exception:  # noqa: BLE001
-            pass
 
 
 def _drive_graph(graph, initial, thread_config, run_id, runner: Runner, loop, output_sink=None):
@@ -481,4 +480,4 @@ def _judge_model(config: dict[str, Any]) -> str | None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

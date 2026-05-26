@@ -11,8 +11,9 @@ Concrete adapters declare ``name: ClassVar[str]`` and register via
 import subprocess
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar
+from typing import ClassVar
 
 from coterie.core.streaming import run_streaming
 

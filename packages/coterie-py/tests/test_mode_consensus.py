@@ -9,7 +9,6 @@ from coterie.core.llm.scripted import ScriptedLLMClient
 from coterie.graph import build_graph
 
 
-
 def test_two_agents_agree_one_finding_is_confirmed(initial_state):
     """Two of two agents report the same finding → confirmed."""
     finding_a = [{"category": "bug", "severity": "high", "description": "missing null check", "line_ranges": ["x.py:5-6"]}]

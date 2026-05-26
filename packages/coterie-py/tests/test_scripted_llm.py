@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from coterie.core.llm.scripted import ScriptedLLMClient, ScriptedLLMError
 
 

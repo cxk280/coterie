@@ -13,7 +13,8 @@ registry itself.
     def build(...): ...
 """
 
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 
 class AlreadyRegisteredError(KeyError):
