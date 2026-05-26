@@ -6,8 +6,7 @@ round** (debate, adversarial review, tournament, consensus, or single) behind th
 scenes — raising the reliability and quality of each response.
 
 ```bash
-npm install -g coterie
-coterie chat                       # starts an adversarial session in the cwd
+coterie chat                       # in any repo — each prompt runs a multi-agent round
 ```
 
 ```
@@ -20,6 +19,38 @@ coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · judge → claude-code: tests pass, edge cases covered
 
   Added @retry to http.py with exponential backoff + tests in test_http.py.
+```
+
+## Setup (one-time)
+
+Not on npm yet — install from source and link the `coterie` command onto your PATH:
+
+```bash
+git clone https://github.com/cxk280/coterie
+cd coterie/packages/coterie-js
+npm install
+npm run build      # compile TypeScript → dist/
+npm link           # puts `coterie` on your PATH globally
+```
+
+Sign in to the agent CLIs — they run on your **subscriptions**, no API keys:
+
+```bash
+claude    # sign in to Claude Max, then exit
+codex     # sign in with your ChatGPT account
+# cursor-agent (optional) — for the Cursor agent
+```
+
+`coterie chat` runs a startup preflight and tells you exactly what to install or
+sign into if anything's missing. *(Once published, this whole section becomes
+`npm install -g coterie`.)*
+
+Then, in any repo you want it to work in:
+
+```bash
+cd ~/my-project
+export COTERIE_COORDINATION_PROVIDER=claude-cli   # coordination on your Claude sub too → $0 metered
+coterie chat
 ```
 
 ## How it works
