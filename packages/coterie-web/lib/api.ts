@@ -34,6 +34,9 @@ export type TokenSummary = Schemas["TokenSummary"];
 export type CreateTokenResponse = Schemas["CreateTokenResponse"];
 export type CreateRunBody = Schemas["CreateRunRequest"];
 export type ResumeDecision = Schemas["ResumeRequest"]["decision"];
+export type ProviderTestRequest = Schemas["ProviderTestRequest"];
+export type ProviderTestResponse = Schemas["ProviderTestResponse"];
+export type Provider = ProviderTestRequest["provider"];
 
 // Client-side convenience shapes for endpoints the server returns as untyped
 // objects (`list[dict]`), so they have no generated schema.
@@ -106,6 +109,8 @@ export const api = {
   createToken: (name: string) =>
     post<CreateTokenResponse>("/api/auth/tokens", { name }),
   revokeToken: (id: string) => del<{ status: string; id: string }>(`/api/auth/tokens/${id}`),
+  testProvider: (body: ProviderTestRequest) =>
+    post<ProviderTestResponse>("/api/auth/providers/test", body),
   /** EventSource URL. Token must be in the query string for SSE since EventSource can't set headers. */
   eventsUrl: (id: string) => {
     const t = token();

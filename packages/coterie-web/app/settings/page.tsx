@@ -1,5 +1,7 @@
+import { ProviderCard } from "@/components/settings/ProviderCard";
 import { TokenManager } from "@/components/settings/TokenManager";
 import { AppNav } from "@/components/ui/AppNav";
+import type { Provider } from "@/lib/api";
 import { PROVIDERS } from "@/lib/mock-data";
 
 const SIDE_NAV = [
@@ -72,92 +74,15 @@ export default function SettingsPage() {
           </p>
 
           {PROVIDERS.map((p) => (
-            <article
+            <ProviderCard
               key={p.name}
-              className="flex flex-col gap-3.5 rounded-lg border px-5 py-4"
-              style={{
-                background: "var(--color-bg-surface)",
-                borderColor: "var(--color-border-default)",
-              }}
-            >
-              <header className="flex items-center gap-3">
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{
-                    background: p.configured ? "var(--color-status-success)" : "var(--color-text-disabled)",
-                  }}
-                />
-                <h3 className="text-base font-semibold" style={{ color: "var(--color-text-primary)" }}>
-                  {p.name}
-                </h3>
-                {p.isDefault && (
-                  <span
-                    className="rounded px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider"
-                    style={{ background: "var(--color-bg-raised)", color: "var(--color-text-secondary)" }}
-                  >
-                    DEFAULT
-                  </span>
-                )}
-                <div className="flex-1" />
-                <span
-                  className="font-mono text-[11px]"
-                  style={{
-                    color: p.configured ? "var(--color-status-success)" : "var(--color-text-tertiary)",
-                  }}
-                >
-                  {p.configured ? "configured" : "not configured"}
-                </span>
-              </header>
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <span
-                  className="font-mono text-xs sm:w-40"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                >
-                  {p.envKey}
-                </span>
-                <div
-                  className="flex flex-1 items-center gap-2 rounded-md border px-3 py-2"
-                  style={{
-                    background: "var(--color-bg-canvas)",
-                    borderColor: "var(--color-border-default)",
-                  }}
-                >
-                  <span
-                    className="font-mono text-xs"
-                    style={{
-                      color: p.configured ? "var(--color-text-primary)" : "var(--color-text-disabled)",
-                    }}
-                  >
-                    {p.configured ? "sk-…••••••••••••••••••••••••3f9c" : "Paste API key…"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md border px-3 py-2 text-xs font-medium"
-                  style={{
-                    background: "var(--color-bg-raised)",
-                    borderColor: "var(--color-border-default)",
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {p.configured ? "Test" : "Save"}
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                <span style={{ color: "var(--color-text-tertiary)" }}>Available models:</span>
-                {p.models.map((m) => (
-                  <span
-                    key={m}
-                    className="rounded px-1.5 py-0.5 font-mono text-[10px]"
-                    style={{ background: "var(--color-bg-raised)", color: "var(--color-text-secondary)" }}
-                  >
-                    {m}
-                  </span>
-                ))}
-              </div>
-            </article>
+              name={p.name}
+              provider={p.name.toLowerCase() as Provider}
+              envKey={p.envKey}
+              configured={p.configured}
+              isDefault={p.isDefault}
+              models={p.models}
+            />
           ))}
 
           <div className="h-px" style={{ background: "var(--color-border-subtle)" }} />
