@@ -6,19 +6,24 @@
 > A conversational multi-agent coding CLI. You chat like you're talking to one
 > coding assistant — but **every prompt runs through a coordination strategy**
 > (debate, adversarial review, tournament, consensus, or single) over the real
-> coding-agent CLIs you already have, so each reply is the product of a
-> reliability-raising round, not one model's first guess.
+> coding-agent CLIs you already have. The agents **deliberate**, then a single
+> **finalizer** agent applies the edits and writes the reply — so each response is
+> the product of a reliability-raising round, not one model's first guess.
 
 ```
 ▲ coterie chat
-  mode=adversarial · workdir=. · coordination=subscription (claude -p)
+  mode=adversarial · workdir=. · subscription (claude -p, $0 metered)
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)
+      Added a @retry decorator with exponential backoff; wrote 3 tests.
   · auditor (codex)
-  · judge → claude-code: tests pass, edge cases covered
+      • [medium] edge-case: no jitter — thundering-herd risk on retries
+  · judge → implementer: backoff correct; add jitter then accept
+  · finalizer (claude-code) — edited http.py, test_http.py
 
-  Added @retry to http.py with exponential backoff + tests in test_http.py.
+  Added @retry to http.py (exponential backoff + jitter) and covered it with
+  three tests in test_http.py. All pass.
 ```
 
 It edits your repo when you ask and answers when you ask — and it runs **entirely
@@ -71,35 +76,56 @@ coterie chat               # adversarial by default; runs in the current directo
 Then just talk to it. Each turn runs a full multi-agent round behind the scenes;
 the answer (and any file edits) is the result.
 
+By default you see the **agent exchanges** stream live — each agent's actual
+contribution, the judge's verdict, what the finalizer changed — so the round is
+legible, not a black box. `/hide` (or `--quiet`) collapses it to just the reply.
+
 **In-session commands:** `/mode <name>` (switch strategy per prompt) ·
-`/show` `/hide` (the live round trace) · `/clear` (forget the conversation) ·
+`/show` `/hide` (the live agent exchanges) · `/clear` (forget the conversation) ·
 `/help` · `/exit`
 
 **Flags:** `coterie chat --mode debate --workdir ~/other-repo --quiet`
 
-## The five modes
+## What happens behind the scenes
 
-| Mode | What happens | Best for |
+Every turn has two phases:
+
+1. **Deliberation** — the chosen mode runs the real agent CLIs in throwaway git
+   worktrees (so they never touch your files): they implement, critique, compete,
+   or review. The mode shapes *how* they deliberate.
+2. **Finalize** — one agent (the judge seat) runs in your actual workdir, reads
+   the deliberation as advice, **applies the edits/actions**, and writes the
+   plain-language reply. It's the only step that changes your files and the only
+   source of the answer — so file edits land in *every* mode, and you never get
+   raw findings JSON back.
+
+## The five modes (the deliberation phase)
+
+| Mode | What the agents do | Best for |
 |---|---|---|
-| `single` | a router picks one agent | quick edits, simple asks |
+| `single` | a router picks one agent to attempt it | quick edits, simple asks |
 | `adversarial` | implementer + auditor + judge, with a refinement loop | reliable code changes (default) |
 | `debate` | two agents argue; a moderator + judge decide | decisions, tradeoffs |
 | `tournament` | N agents compete; a bracket judge ranks | best-of-N for critical work |
-| `consensus` | agents answer independently; an engine merges agreement | reviews, audits |
+| `consensus` | agents review independently; an engine merges agreement | reviews, audits |
 
-Coding edits land cleanest in `single` / `adversarial` (one implementer, gated by
-the auditor/judge). `debate` / `tournament` / `consensus` produce a synthesized
-**answer** rather than competing edits — use them for decisions and
-high-confidence responses. More detail: [docs/modes.md](docs/modes.md).
+Pick the mode by how much scrutiny the request deserves: `single` is quickest,
+`adversarial` adds an auditor/judge loop, and `debate` / `tournament` / `consensus`
+gather more perspectives before the finalizer acts. More detail:
+[docs/modes.md](docs/modes.md).
 
 ## Why it's built this way
 
-1. **LangGraph as the spine** — each mode is a `StateGraph`, so you get
+1. **Deliberate, then act** — splitting each turn into an advisory deliberation
+   (isolated, never mutates your repo) and a single finalizer that applies the
+   edits keeps the multi-agent debate honest while giving you exactly one coherent
+   change set and one human-readable reply, in every mode.
+2. **LangGraph as the spine** — each mode is a `StateGraph`, so you get
    resumability, branch parallelism, and clean per-node streaming for the live trace.
-2. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor;
+3. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor;
    each keeps its own model, prompt scaffolding, and tool harness. Coterie decides
    who runs what under which coordination pattern. Adding a new CLI is one small adapter.
-3. **Subscription-only, by design** — coordination runs on your Claude
+4. **Subscription-only, by design** — coordination runs on your Claude
    subscription via `claude -p`; there is intentionally **no pay-as-you-go API
    backend** so a session can never run up a metered bill. A pluggable provider
    could be added later for keyless environments — it's deliberately not wired in today.

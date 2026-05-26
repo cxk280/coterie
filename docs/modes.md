@@ -3,6 +3,13 @@
 Coterie's pitch is **multi-mode**: the coordination pattern is a config flag, not
 a product. Five modes ship today. Pick by task shape, not by familiarity.
 
+> **In `coterie chat`,** each mode below is the *deliberation* phase — it runs in
+> throwaway worktrees and never mutates your repo. A final *finalizer* agent then
+> runs in your workdir, uses the deliberation as advice, applies the edits, and
+> writes the reply. So edits land in every mode; the mode just shapes the scrutiny
+> the request gets first. (The one-shot `coterie run` skips the finalizer and
+> returns the raw mode output.)
+
 ## Quick decision matrix
 
 | Task shape | Mode | Why |

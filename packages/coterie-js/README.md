@@ -59,18 +59,18 @@ CLIs you already have** — Claude Code and Codex (Cursor optional). The mode
 decides how they cooperate; the synthesized result (and any file edits) is the
 reply. Switch strategies per prompt with `/mode <name>`.
 
-| Mode | What happens | Best for |
+Each turn has two phases: the agents **deliberate** in throwaway worktrees (they
+never touch your files), then one **finalizer** agent runs in your workdir,
+applies the edits, and writes the plain-prose reply. So file edits land in *every*
+mode, and you never get raw findings JSON back. The mode shapes the deliberation:
+
+| Mode | What the agents do | Best for |
 |---|---|---|
-| `single` | a router picks one agent | quick edits, simple asks |
+| `single` | a router picks one agent to attempt it | quick edits, simple asks |
 | `adversarial` | implementer + auditor + judge, with refinement | reliable code changes |
 | `debate` | two agents argue, a moderator + judge decide | decisions, tradeoffs |
 | `tournament` | N agents compete, a bracket judge ranks | best-of-N for critical work |
-| `consensus` | agents answer independently, an engine merges agreement | reviews, audits |
-
-Coding edits land cleanest in `single`/`adversarial` (one implementer, gated by
-the auditor/judge). `debate`/`tournament`/`consensus` produce a synthesized
-*answer* rather than competing edits — use them for decisions and high-confidence
-responses.
+| `consensus` | agents review independently, an engine merges agreement | reviews, audits |
 
 ## Runs on your subscriptions ($0 metered)
 
@@ -91,11 +91,15 @@ required CLI is installed and signed in, and tells you exactly what to do if not
 
 ## Commands
 
-`/mode <name>` · `/show` `/hide` (live trace) · `/clear` · `/help` · `/exit`
+`/mode <name>` · `/show` `/hide` (live agent exchanges) · `/clear` · `/help` · `/exit`
+
+The agent exchanges stream live by default — each agent's contribution, the
+judge's verdict, what the finalizer changed. `/hide` (or `--quiet`) shows only the
+reply.
 
 ```bash
 coterie chat --mode debate --workdir ~/proj   # start in a mode, against a repo
-coterie chat --quiet                            # hide the round trace
+coterie chat --quiet                            # hide the agent exchanges
 ```
 
 ## One-shot (non-conversational)

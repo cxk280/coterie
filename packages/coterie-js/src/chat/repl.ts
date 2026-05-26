@@ -5,13 +5,15 @@ import { createInterface } from "node:readline";
 
 import kleur from "kleur";
 
-import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "../core/executor.js";
+import { IsolatedWorktreeExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { buildLLM } from "../core/llm/build.js";
 import type { Mode } from "../core/state.js";
 import { buildGraph } from "../graph.js";
 import { defaultConfig } from "./configs.js";
+import { runFinalizer } from "./finalizer.js";
 import { formatProblems, preflight } from "./preflight.js";
+import { digestRound } from "./render.js";
 import { Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
@@ -27,28 +29,19 @@ async function buildLlms(mode: Mode, cfg: any): Promise<Record<string, LLMClient
   };
 }
 
-function buildExecutor(mode: Mode): AdapterExecutor {
-  return mode === "consensus" || mode === "tournament" ? new IsolatedWorktreeExecutor() : new LocalSubprocessExecutor();
-}
-
-function extractAnswer(final: any): string {
-  const runs = final.runs ?? [];
-  const last = runs[runs.length - 1];
-  const text = (last?.stdout ?? "").trim();
-  return text || "(the round produced no textual output — check the workdir for edits)";
-}
-
 const HELP = `
 Commands:
   /mode <name>   switch coordination mode (${MODES.join(", ")})
-  /show /hide    show or hide the live round trace
+  /show /hide    show or hide the live agent exchanges
   /clear         forget the conversation so far
   /help          this help
   /exit          quit
 
-Tip: coding edits land cleanest in 'single' or 'adversarial' (one implementer,
-gated by the auditor/judge). 'debate' / 'tournament' / 'consensus' are best for
-decisions and high-reliability answers (a synthesized verdict, not competing edits).
+Each turn the agents deliberate (review/critique/compete, in throwaway
+workspaces), then one final agent applies the edits in your workdir and writes
+the reply — so file edits land in every mode. The mode shapes the deliberation:
+'single' is quickest; 'adversarial' adds an auditor/judge loop; 'debate' /
+'tournament' / 'consensus' get more perspectives before the finalizer acts.
 `.trim();
 
 export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolean }): Promise<void> {
@@ -67,8 +60,8 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   console.log(kleur.cyan().bold("▲ coterie chat"));
   console.log(
     kleur.dim(
-      `  mode=${mode} · workdir=${opts.workdir} · coordination=subscription (claude -p)\n` +
-        "  Every turn runs a multi-agent round behind the scenes. /help for commands.",
+      `  mode=${mode} · workdir=${opts.workdir} · subscription (claude -p, $0 metered)\n` +
+        "  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.",
     ),
   );
 
@@ -116,10 +109,13 @@ async function runTurn(
 ): Promise<void> {
   const cfg = defaultConfig(mode);
   const llms = await buildLlms(mode, cfg);
-  const graph = buildGraph({ workdir, executor: buildExecutor(mode), config: cfg, ...llms });
+  // Deliberation never touches the real workdir — it runs in throwaway worktrees
+  // and feeds the finalizer as advice. The finalizer is the sole mutator.
+  const graph = buildGraph({ workdir, executor: new IsolatedWorktreeExecutor(), config: cfg, ...llms });
 
+  const task = transcript.taskFor(text);
   const initial = {
-    task: transcript.taskFor(text),
+    task,
     mode,
     plan: [],
     current_step_idx: 0,
@@ -135,7 +131,7 @@ async function runTurn(
   };
 
   trace.reset();
-  if (trace.visible) console.log(kleur.dim(`  ↻ ${mode} round…`));
+  if (trace.visible) console.log(kleur.dim(`  ↻ ${mode} deliberation…`));
 
   let final: any = initial;
   for await (const state of await graph.stream(initial, { streamMode: "values" })) {
@@ -143,9 +139,17 @@ async function runTurn(
     trace.update(state);
   }
 
-  console.log("\n" + extractAnswer(final));
-  if (final.spend_usd) console.log(kleur.dim(`  (round spend ≈ $${final.spend_usd.toFixed(4)})`));
+  if (trace.visible) console.log(kleur.dim("  ↻ finalizing — applying edits + composing reply…"));
+  const judgeModel: string | undefined = cfg[mode]?.judge?.model ?? cfg.consensus?.engine?.model;
+  const { answer, run } = await runFinalizer({ task, digest: digestRound(final), workdir, model: judgeModel });
+  trace.finalizer(run);
+
+  const reply = answer || "(the finalizer produced no reply — check the workdir for edits)";
+  console.log("\n" + reply);
+
+  const totalSpend = (final.spend_usd ?? 0) + (run.cost_estimate_usd ?? 0);
+  if (totalSpend) console.log(kleur.dim(`  (≈ $${totalSpend.toFixed(4)} subscription usage — $0 metered)`));
 
   transcript.add("user", text);
-  transcript.add("assistant", extractAnswer(final));
+  transcript.add("assistant", reply);
 }
