@@ -81,7 +81,10 @@ async def _http_exception_handler(request: Request, exc: StarletteHTTPException)
 async def _validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    return error_response(422, jsonable_encoder(exc.errors()), request)
+    # Keep only loc/msg/type — drop pydantic's `input`/`ctx`, which would echo
+    # the submitted value back (e.g. an api_key) in the response body.
+    safe = [{k: e[k] for k in ("loc", "msg", "type") if k in e} for e in exc.errors()]
+    return error_response(422, jsonable_encoder(safe), request)
 
 
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
