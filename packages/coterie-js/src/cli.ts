@@ -7,41 +7,11 @@ import kleur from "kleur";
 import { loadConfig } from "./config.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
 import type { LLMClient } from "./core/llm/base.js";
+import { buildLLM } from "./core/llm/build.js";
 import { buildGraph } from "./graph.js";
 
 import "./adapters/index.js";  // trigger adapter registration
 import "./modes/index.js";     // trigger mode registration
-
-function inferProvider(model?: string): string {
-  if (!model) return "anthropic";
-  const m = model.toLowerCase();
-  if (m.startsWith("claude")) return "anthropic";
-  if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3")) return "openai";
-  if (m.includes("llama")) return "groq";
-  if (m.includes("grok")) return "xai";
-  return "anthropic";
-}
-
-async function buildLLM(model?: string): Promise<LLMClient | null> {
-  const provider = process.env.COTERIE_LLM_PROVIDER ?? inferProvider(model);
-  if (provider === "anthropic") {
-    const { AnthropicClient } = await import("./core/llm/anthropicClient.js");
-    return new AnthropicClient(model);
-  }
-  if (provider === "openai") {
-    const { OpenAIClient } = await import("./core/llm/openaiCompat.js");
-    return new OpenAIClient(model);
-  }
-  if (provider === "groq") {
-    const { GroqClient } = await import("./core/llm/openaiCompat.js");
-    return new GroqClient(model);
-  }
-  if (provider === "xai") {
-    const { XAIClient } = await import("./core/llm/openaiCompat.js");
-    return new XAIClient(model);
-  }
-  throw new Error(`unknown LLM provider ${provider}`);
-}
 
 function buildExecutor(cfg: any): AdapterExecutor {
   const explicit = cfg.executor?.kind;
