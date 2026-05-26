@@ -296,6 +296,36 @@ def test_rate_limit_returns_429(client, monkeypatch):
     assert 429 in statuses, f"expected at least one 429 across {overflow} attempts; saw {statuses}"
 
 
+def test_create_run_503_when_at_capacity(client):
+    """When the runner's in-flight set is saturated, create_run sheds load with
+    a 503 (uniform envelope + Retry-After) rather than queueing unbounded."""
+    from coterie_api.main import app
+
+    runner = app.state.runner
+    runner._max_inflight = 1
+    runner._inflight_runs = {"already-running"}
+
+    r = client.post(
+        "/api/runs",
+        headers=auth(client),
+        json={
+            "task": "over capacity",
+            "mode": "single",
+            "config": {
+                "version": 1,
+                "agents": [{"id": "a", "adapter": "fake"}],
+                "router": {"enabled": False},
+            },
+        },
+    )
+    assert r.status_code == 503
+    body = r.json()
+    assert body["error"] == "unavailable"
+    assert body["code"] == 503
+    assert body["request_id"]
+    assert r.headers.get("Retry-After") == "5"
+
+
 def test_run_carries_trace_id_when_tracing_enabled(client, monkeypatch, tmp_path):
     """With an InMemorySpanExporter wired into coterie's tracer, the runner
     captures a trace_id, persists it on the row, and surfaces it on the API
