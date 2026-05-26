@@ -91,3 +91,16 @@ class TokenSummary(BaseModel):
     created_at: str
     last_used_at: str | None = None
     revoked: bool
+
+
+Provider = Literal["anthropic", "openai", "groq", "xai"]
+
+
+class ProviderTestRequest(BaseModel):
+    provider: Provider
+    api_key: str = Field(min_length=1, repr=False)
+
+
+class ProviderTestResponse(BaseModel):
+    ok: bool
+    detail: str

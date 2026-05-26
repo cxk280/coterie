@@ -462,3 +462,40 @@ def test_logout_clears_cookie(client):
     r = client.post("/api/auth/logout", headers=auth(client))
     assert r.status_code == 200
     assert r.json()["status"] == "logged_out"
+
+
+def test_provider_test_endpoint(client, monkeypatch):
+    """The provider-key probe is invoked and its (ok, detail) surfaced. The
+    probe itself is mocked so the test never hits the network."""
+    import coterie_api.providers as providers
+
+    monkeypatch.setattr(
+        providers, "test_provider_key", lambda provider, api_key: (True, "key is valid")
+    )
+    r = client.post(
+        "/api/auth/providers/test",
+        headers=auth(client),
+        json={"provider": "anthropic", "api_key": "sk-test-123"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"ok": True, "detail": "key is valid"}
+
+
+def test_provider_test_requires_auth(client):
+    r = client.post(
+        "/api/auth/providers/test", json={"provider": "anthropic", "api_key": "x"}
+    )
+    assert r.status_code == 401
+
+
+def test_provider_test_rejects_unknown_provider(client):
+    """An unknown provider is rejected by request validation (Literal), so the
+    probe never runs."""
+    r = client.post(
+        "/api/auth/providers/test",
+        headers=auth(client),
+        json={"provider": "bogus", "api_key": "x"},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"] == "validation_error"
