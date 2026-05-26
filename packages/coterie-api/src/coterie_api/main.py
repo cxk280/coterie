@@ -36,6 +36,8 @@ from coterie_api.models import (
     CreateTokenRequest,
     CreateTokenResponse,
     MeResponse,
+    ProviderTestRequest,
+    ProviderTestResponse,
     ResumeRequest,
     RunDetail,
     RunListResponse,
@@ -370,6 +372,19 @@ async def revoke_token_route(token_id: str, user: User = Depends(current_user)) 
     if not ok:
         raise HTTPException(404, f"token {token_id} not found or already revoked")
     return {"status": "revoked", "id": token_id}
+
+
+@app.post("/api/auth/providers/test", response_model=ProviderTestResponse)
+@limiter.limit(os.environ.get("COTERIE_RATE_LIMIT_PROVIDER_TEST", "10/minute"))
+async def test_provider_route(
+    request: Request, req: ProviderTestRequest, _: User = Depends(current_user)
+) -> ProviderTestResponse:
+    """Validate a provider API key with a cheap, auth-only probe. The key is
+    used only for the probe — never stored or logged."""
+    from coterie_api.providers import test_provider_key
+
+    ok, detail = await asyncio.to_thread(test_provider_key, req.provider, req.api_key)
+    return ProviderTestResponse(ok=ok, detail=detail)
 
 
 # ---------- GitHub OAuth ----------

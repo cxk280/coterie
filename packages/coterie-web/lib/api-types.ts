@@ -89,6 +89,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/providers/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Provider Route
+         * @description Validate a provider API key with a cheap, auth-only probe. The key is
+         *     used only for the probe — never stored or logged.
+         */
+        post: operations["test_provider_route_api_auth_providers_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/rotate": {
         parameters: {
             query?: never;
@@ -340,6 +361,23 @@ export interface components {
             login?: string | null;
             /** Name */
             name?: string | null;
+        };
+        /** ProviderTestRequest */
+        ProviderTestRequest: {
+            /** Api Key */
+            api_key: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "openai" | "groq" | "xai";
+        };
+        /** ProviderTestResponse */
+        ProviderTestResponse: {
+            /** Detail */
+            detail: string;
+            /** Ok */
+            ok: boolean;
         };
         /** ResumeRequest */
         ResumeRequest: {
@@ -608,6 +646,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_provider_route_api_auth_providers_test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                coterie_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderTestResponse"];
                 };
             };
             /** @description Validation Error */
