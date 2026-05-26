@@ -76,6 +76,16 @@ async function main() {
       await runChat({ mode: opts.mode as any, workdir: opts.workdir, quiet: opts.quiet });
     });
 
+  program
+    .command("doctor")
+    .description("Check which agent CLIs are installed and signed in (Coterie needs at least two).")
+    .action(async () => {
+      const { runDoctor, formatDoctor } = await import("./chat/doctor.js");
+      const result = runDoctor();
+      console.log(formatDoctor(result));
+      process.exit(result.ok ? 0 : 1);
+    });
+
   await program.parseAsync(process.argv);
 }
 

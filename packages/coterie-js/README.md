@@ -33,17 +33,26 @@ npm run build      # compile TypeScript → dist/
 npm link           # puts `coterie` on your PATH globally
 ```
 
-Sign in to the agent CLIs — they run on your **subscriptions**, no API keys:
+Sign in to **at least two** agent CLIs — Coterie coordinates multiple agents, so
+it needs two to deliberate (any pair), and uses all you have. They run on your
+**subscriptions**, no API keys:
 
 ```bash
-claude    # sign in to Claude Max, then exit
-codex     # sign in with your ChatGPT account
-# cursor-agent (optional) — for the Cursor agent
+claude          # sign in to Claude Max, then exit
+codex           # sign in with your ChatGPT account
+cursor-agent login   # sign in to Cursor
 ```
 
-`coterie chat` runs a startup preflight and tells you exactly what to install or
-sign into if anything's missing. *(Once published, this whole section becomes
-`npm install -g coterie`.)*
+Run `coterie doctor` to see which are ready:
+
+```bash
+coterie doctor  # ✓/✗ per agent; exits non-zero until at least two are ready
+```
+
+Coterie keeps no config of binary paths or credentials — it finds each CLI on
+your `PATH` and lets it read its own creds, so it authenticates exactly as your
+shell does. `coterie chat` also runs this check on startup. *(Once published,
+the install step becomes `npm install -g coterie`.)*
 
 Then, in any repo you want it to work in:
 
@@ -55,9 +64,9 @@ coterie chat        # runs entirely on your subscriptions — $0 metered
 ## How it works
 
 Each prompt becomes a one-turn coordination round over the **real coding-agent
-CLIs you already have** — Claude Code and Codex (Cursor optional). The mode
-decides how they cooperate; the synthesized result (and any file edits) is the
-reply. Switch strategies per prompt with `/mode <name>`.
+CLIs you already have** — any two or more of Claude Code, Codex, and Cursor. The
+mode decides how they cooperate; the synthesized result (and any file edits) is
+the reply. Switch strategies per prompt with `/mode <name>`.
 
 Each turn has two phases: the agents **deliberate** in throwaway worktrees (they
 never touch your files), then one **finalizer** agent runs in your workdir,

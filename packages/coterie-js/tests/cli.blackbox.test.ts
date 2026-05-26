@@ -39,13 +39,21 @@ function sandboxEnv(present: string[]): NodeJS.ProcessEnv {
     const stub = join(bin, name);
     writeFileSync(stub, `#!/bin/sh\necho "${name} 1.0.0"\nexit 0\n`);
     chmodSync(stub, 0o755);
+    // Drop the credential file each CLI's auth probe looks for, so a "present"
+    // agent also reads as signed in. Extend this when adding a new agent.
     if (name === "claude") writeFileSync(join(home, ".claude.json"), "{}");
     if (name === "codex") {
       mkdirSync(join(home, ".codex"), { recursive: true });
       writeFileSync(join(home, ".codex", "auth.json"), "{}");
     }
+    if (name === "cursor-agent") mkdirSync(join(home, ".cursor"), { recursive: true });
   }
   return { PATH: bin, HOME: home };
+}
+
+/** All subsets of `items` (the powerset), for an exhaustive presence matrix. */
+function powerset<T>(items: T[]): T[][] {
+  return items.reduce<T[][]>((acc, item) => [...acc, ...acc.map((s) => [...s, item])], [[]]);
 }
 
 describe("coterie CLI (black-box)", () => {
@@ -104,4 +112,29 @@ describe("coterie CLI (black-box)", () => {
     expect(out).toMatch(/claude[^\n]*not installed/);
     expect(out).toMatch(/codex[^\n]*not installed/);
   });
+});
+
+describe("coterie doctor — every agent presence combination", () => {
+  // The three agents Coterie ships with. `doctor` requires at least two of these
+  // (any pair), so the expected exit is 0 once ≥2 are present, else 1. Add a new
+  // agent here (and to sandboxEnv's credential fixtures) when one is added.
+  const AGENTS = ["claude", "codex", "cursor-agent"] as const;
+
+  for (const present of powerset([...AGENTS])) {
+    const absent = AGENTS.filter((a) => !present.includes(a));
+    const expectedExit = present.length >= 2 ? 0 : 1;
+    const label =
+      present.length === 0 ? "none present" : present.join("+") + " present";
+
+    it(`${label} → exit ${expectedExit}`, () => {
+      const r = runCli(["doctor"], sandboxEnv(present));
+      const out = r.stderr + r.stdout;
+
+      expect(r.status).toBe(expectedExit);
+      for (const a of present) expect(out).toMatch(new RegExp(`✓ ${a}\\b`));
+      for (const a of absent) expect(out).toMatch(new RegExp(`✗ ${a}\\b`));
+      expect(out).toContain(`${present.length} of ${AGENTS.length} ready`);
+      expect(out).toContain(expectedExit === 0 ? "good to go" : "needs at least 2");
+    });
+  }
 });

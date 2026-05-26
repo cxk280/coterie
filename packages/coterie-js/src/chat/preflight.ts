@@ -35,13 +35,47 @@ function isInstalled(cli: string): boolean {
   return !probe.error && (probe.status ?? 1) === 0;
 }
 
-/** Best-effort auth check (no network spend): look for the CLI's local creds. */
+/** Best-effort auth check (no network spend): look for the CLI's local creds at
+ *  the locations it actually uses, honoring the env overrides each tool supports
+ *  and resolving HOME from the environment — so it matches your shell, not a
+ *  hardcoded path. This is a heuristic for a friendly message; the agent CLI is
+ *  the real source of truth at run time (it reads its own creds, incl. Keychain),
+ *  so a false "not signed in" here never stops a CLI that works in your shell. */
 function looksAuthed(cli: string): boolean {
-  const home = homedir();
-  if (cli === "claude") return existsSync(join(home, ".claude.json")) || existsSync(join(home, ".claude", ".credentials.json"));
-  if (cli === "codex") return existsSync(join(home, ".codex", "auth.json"));
-  if (cli === "cursor-agent") return existsSync(join(home, ".cursor"));
+  const home = process.env.HOME || homedir();
+  if (cli === "claude") {
+    const dir = process.env.CLAUDE_CONFIG_DIR || join(home, ".claude");
+    return existsSync(join(home, ".claude.json")) || existsSync(join(dir, ".credentials.json"));
+  }
+  if (cli === "codex") {
+    const dir = process.env.CODEX_HOME || join(home, ".codex");
+    return existsSync(join(dir, "auth.json"));
+  }
+  if (cli === "cursor-agent") {
+    const cfg = process.env.XDG_CONFIG_HOME || join(home, ".config");
+    return existsSync(join(home, ".cursor")) || existsSync(join(cfg, "cursor-agent"));
+  }
   return true;
+}
+
+export interface AgentStatus {
+  cli: string;
+  ok: boolean;
+  reason: "ready" | "not installed" | "not signed in";
+  fix?: string;
+}
+
+/** Every agent CLI Coterie knows how to drive, derived from the adapter→CLI map
+ *  so registering a new adapter (with an ADAPTER_CLI entry) extends this list —
+ *  and `coterie doctor` — automatically. */
+export const ALL_AGENT_CLIS: string[] = [...new Set(Object.values(ADAPTER_CLI))];
+
+/** Installed + (best-effort) signed-in status for one agent CLI. */
+export function checkAgent(cli: string): AgentStatus {
+  const rem = REMEDIATION[cli] ?? { install: `install ${cli}`, login: `authenticate ${cli}` };
+  if (!isInstalled(cli)) return { cli, ok: false, reason: "not installed", fix: `Install: ${rem.install}` };
+  if (!looksAuthed(cli)) return { cli, ok: false, reason: "not signed in", fix: `Log in: ${rem.login}` };
+  return { cli, ok: true, reason: "ready" };
 }
 
 /** Check every agent CLI referenced by the config. Returns problems (empty = OK). */
@@ -55,12 +89,8 @@ export function preflight(config: Record<string, any>): PreflightProblem[] {
 
   const problems: PreflightProblem[] = [];
   for (const cli of clis) {
-    const rem = REMEDIATION[cli] ?? { install: `install ${cli}`, login: `authenticate ${cli}` };
-    if (!isInstalled(cli)) {
-      problems.push({ agent: cli, cli, reason: "not installed", fix: `Install: ${rem.install}` });
-    } else if (!looksAuthed(cli)) {
-      problems.push({ agent: cli, cli, reason: "not signed in", fix: `Log in: ${rem.login}` });
-    }
+    const status = checkAgent(cli);
+    if (!status.ok) problems.push({ agent: cli, cli, reason: status.reason, fix: status.fix ?? "" });
   }
   return problems;
 }
