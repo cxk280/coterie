@@ -13,12 +13,10 @@ agents:
     adapter: claude-code
   - id: codex
     adapter: codex
-  - id: aider
-    adapter: aider
   - id: cursor
     adapter: cursor
 tournament:
-  participants: [claude, codex, aider, cursor]
+  participants: [claude, codex, cursor]
   judge:
     model: claude-opus-4-7
     criteria: [correctness, minimal-diff, tests-pass, clarity]

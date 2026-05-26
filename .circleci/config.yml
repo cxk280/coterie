@@ -1,51 +1,15 @@
 version: 2.1
 
-# CI for the Coterie monorepo. Mirrors .github/workflows/ci.yml:
-#   python  — ruff + pytest across all four Python packages (3.11/3.12/3.13)
-#   js      — build, typecheck, vitest for coterie-js
-#   web     — typecheck, next build, Playwright smoke for coterie-web
+# CI for the Coterie CLI (packages/coterie-js): build, typecheck, vitest.
 
 jobs:
-  python:
-    parameters:
-      pyver:
-        type: string
-    docker:
-      - image: cimg/python:<< parameters.pyver >>
-    steps:
-      - checkout
-      - run:
-          name: Install workspace packages
-          command: |
-            python -m pip install --upgrade pip
-            pip install -e "packages/coterie-py[dev]"
-            pip install -e "packages/coterie-api[dev]"
-            pip install -e "packages/coterie-bench[dev]"
-            pip install -e "packages/coterie-tui[dev]"
-      - run:
-          name: Lint (ruff)
-          command: ruff check .
-      - run:
-          name: OpenAPI schema is current
-          command: |
-            python -m coterie_api.export_openapi
-            git diff --exit-code packages/coterie-api/openapi.json
-      - run:
-          name: Tests
-          command: |
-            pytest -q \
-              packages/coterie-py/tests \
-              packages/coterie-api/tests \
-              packages/coterie-bench/tests \
-              packages/coterie-tui/tests
-
   js:
     docker:
       - image: cimg/node:22.11
     steps:
       - checkout
       - run:
-          name: Install (workspaces)
+          name: Install
           command: npm ci
       - run:
           name: Build
@@ -57,72 +21,7 @@ jobs:
           name: Tests
           command: npm test -w packages/coterie-js
 
-  web:
-    # Official Playwright image: browsers + system deps preinstalled, runs as
-    # root, so no sudo/apt dance. Keep the tag in step with @playwright/test.
-    docker:
-      - image: mcr.microsoft.com/playwright:v1.49.0-jammy
-    working_directory: ~/project/packages/coterie-web
-    steps:
-      - checkout:
-          path: ~/project
-      - run:
-          name: Install
-          command: npm ci
-      - run:
-          name: API types are current
-          command: npm run gen:api:check
-      - run:
-          name: Typecheck
-          command: npm run typecheck
-      - run:
-          name: Build
-          command: npm run build
-          environment:
-            NEXT_TELEMETRY_DISABLED: "1"
-      - run:
-          name: Install Playwright browser
-          command: npx playwright install chromium
-      - run:
-          name: E2E smoke
-          command: npm run test:e2e
-          environment:
-            PW_USE_WEBSERVER: "1"
-
-  deploy:
-    # Continuous deployment to Railway. Runs only on main, only after every CI
-    # job passes. The real `railway up` invocation is finalized in Track 5
-    # (Railway project + RAILWAY_TOKEN project token in CircleCI settings);
-    # until that token exists this job no-ops so main stays green.
-    docker:
-      - image: cimg/node:22.11
-    steps:
-      - checkout
-      - run:
-          name: Deploy to Railway
-          command: |
-            if [ -z "$RAILWAY_TOKEN" ]; then
-              echo "RAILWAY_TOKEN not set — skipping deploy (wired in Track 5)."
-              exit 0
-            fi
-            npm i -g @railway/cli
-            railway up --ci
-
 workflows:
   ci:
     jobs:
-      - python:
-          matrix:
-            alias: python
-            parameters:
-              pyver: ["3.11", "3.12", "3.13"]
       - js
-      - web
-      - deploy:
-          requires:
-            - python
-            - js
-            - web
-          filters:
-            branches:
-              only: main

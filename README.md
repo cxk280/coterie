@@ -1,251 +1,130 @@
 # Coterie
 
-> **Multi-mode** LangGraph orchestration for **heterogeneous coding agents**.
-> Change `mode: single` to `mode: adversarial` and the same tool, the same
-> agents, and the same task now run under a completely different coordination
-> pattern. One config flag.
-
 [![CI](https://dl.circleci.com/status-badge/img/gh/cxk280/coterie/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/cxk280/coterie/tree/main)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![PyPI](https://img.shields.io/badge/pypi-coterie-3776AB.svg)](https://pypi.org/project/coterie/)
-[![npm](https://img.shields.io/badge/npm-coterie-CB3837.svg)](https://www.npmjs.com/package/coterie)
-[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+
+> A conversational multi-agent coding CLI. You chat like you're talking to one
+> coding assistant — but **every prompt runs through a coordination strategy**
+> (debate, adversarial review, tournament, consensus, or single) over the real
+> coding-agent CLIs you already have, so each reply is the product of a
+> reliability-raising round, not one model's first guess.
+
+```
+▲ coterie chat
+  mode=adversarial · workdir=. · coordination=subscription (claude -p)
+
+coterie(adversarial)› add a retry decorator to http.py and cover it with tests
+  · implementer (claude-code)
+  · auditor (codex)
+  · judge → claude-code: tests pass, edge cases covered
+
+  Added @retry to http.py with exponential backoff + tests in test_http.py.
+```
+
+It edits your repo when you ask and answers when you ask — and it runs **entirely
+on your existing subscriptions** (Claude Max / ChatGPT / Cursor Pro), so a full
+turn is **$0 metered**: no API keys, no pay-as-you-go.
 
 ---
 
-## Talk to it: `coterie chat`
+## Requirements
 
-```bash
-npm install -g coterie
-coterie chat
-```
+- **Node.js ≥ 20** and **git**.
+- At least the two default agent CLIs, installed and signed in to their
+  subscriptions (Coterie runs a startup check and tells you if any are missing):
 
-A conversational terminal assistant that *feels* like one coding agent — but
-**every prompt runs through a multi-agent coordination round** (debate /
-adversarial / tournament / consensus / single) behind the scenes, so each reply
-is the product of a reliability-raising round, not a single model's first guess.
-Switch strategy per prompt with `/mode`. It edits your repo when asked and
-answers when asked.
-
-It drives the **real coding-agent CLIs you already have — Claude Code + Codex
-(Cursor optional) — on your subscriptions**, and the behind-the-scenes
-coordination runs on your Claude subscription too, so a full turn is **$0
-metered** (no API keys, no pay-as-you-go). Full usage:
-[packages/coterie-js/README.md](packages/coterie-js/README.md).
-
-Prefer a browser? The web app embeds the **same CLI in a real terminal** — run
-`npm run terminal:bridge` in `packages/coterie-web` and open `/terminal` for
-`coterie chat` in the browser alongside the dashboard's richer UI.
-
-## What's different about this
-
-The 2026 multi-CLI orchestrator space is crowded. Every other tool gives you
-**one** coordination pattern baked in. **Coterie gives you five, switchable per
-task**:
-
-| Mode | Shape | Best for |
+| Agent | Install | Sign in |
 |---|---|---|
-| `single` | supervisor routes one specialist per subtask | refactors, generic delegation |
-| `consensus` | N agents independently report; engine surfaces what they agree on | code reviews, security audits |
-| `adversarial` | **Implementer + Auditor + Judge** with refinement loop | high-stakes implementation that needs stress-testing |
-| `debate` | Pro + Con + Moderator across N rounds | design decisions, library/architecture choices |
-| `tournament` | N participants race; judge ranks | "best of N" for critical changes |
+| **Claude Code** | `npm install -g @anthropic-ai/claude-code` | run `claude`, sign in to Claude (Max/Pro) |
+| **Codex** | `npm install -g @openai/codex` | run `codex`, sign in with your ChatGPT account |
+| **Cursor** *(optional)* | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent login` |
 
-That mode-switching capability is the headline. The honest case against the
-alternatives:
+No `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` needed — and if one is set, the agents
+still use your subscription (Coterie strips it from the agent's environment).
 
-- **vs [MCO](https://github.com/mco-org/mco)** — MCO does *one* mode well: consensus. Coterie does consensus as one of five and adds the adversarial / debate patterns MCO lacks. MCO is sharper at consensus alone; Coterie is the meta-orchestrator.
-- **vs [bug-hunter](https://github.com/codexstar69/bug-hunter)** — bug-hunter is the adversarial pattern, locked to security/bug-finding. Coterie's adversarial mode is general-purpose, and is one of several available modes.
-- **vs [Tutti](https://github.com/nutthouse/tutti) / [Tessera](https://github.com/horang-labs/tessera) / [Conflux](https://github.com/tumf/conflux)** — these are coordinated workspaces for running multiple CLIs side-by-side. Coterie is a coordination *framework*; the modes are first-class.
-- **vs [RA.Aid](https://github.com/ai-christianson/RA.Aid)** — RA.Aid is one autonomous LangGraph agent. Coterie orchestrates many heterogeneous CLIs in N coordination patterns.
-- **vs [Deb8flow](https://towardsdatascience.com/deb8flow-orchestrating-autonomous-ai-debates-with-langgraph-and-gpt-4o/)** — Deb8flow does debate via in-process LLM calls. Coterie's debate mode debates between subprocess-wrapped CLIs (each runs its own model, prompt scaffolding, and tool harness).
+## Install
 
-## Measured: cost / quality / latency
-
-The same 5-task corpus run through every applicable mode, with **real agents** —
-Claude Code + Codex actually editing the workdir, graded on the result — not
-mocks. Coordination LLMs (router/judge/engine/moderator) run on the Anthropic
-API; the run cost **~$5.49** total.
-
-| Mode | Pass rate | Avg score | Avg cost | Avg latency |
-|---|---|---|---|---|
-| `consensus` | 100% | 1.00 | $0.20 | 29s |
-| `tournament` | 100% | 1.00 | $0.25 | 35s |
-| `debate` | 100% | 1.00 | $0.28 | 91s |
-| `adversarial` | 75% | 0.92 | $0.97 | 210s |
-| `single` | 50% | 0.83 | $0.31 | 33s |
-
-What the numbers actually say — and the honest caveats:
-
-- **`single` is cheap and fast but least reliable here** (50% pass — it fumbled a
-  rename task two other modes got right). One specialist, one shot.
-- **`adversarial` is the most expensive and slowest, because it does the most
-  work** — its average is dragged up by an implement-a-checkout-endpoint cell
-  that ran **4 agent passes, surfaced 8 sustained findings, and cost $2.95 over
-  ~10 min**. That's the implementer/auditor/judge loop earning its keep.
-- **`consensus` / `tournament` / `debate` hit the best cost-quality balance** on
-  this corpus.
-- **Caveat:** small n (10 cells, 1–4 per mode) on one synthetic corpus — directional,
-  not a leaderboard. Reproduce with `coterie-bench run --real`; raw rows + the
-  Pareto plot are in [`packages/coterie-bench/results/`](packages/coterie-bench/results/).
-
-## Why LangGraph, why subprocess CLIs
-
-Two architectural choices that don't appear together anywhere else:
-
-1. **LangGraph as the spine** — orchestration is `StateGraph` itself, not a custom thing. You get resumability, checkpointing, branch parallelism, and `interrupt_before` HIL gates for free.
-2. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor, Aider — each keeps its own model, prompt scaffolding, and tool harness. Coterie decides who runs what under which pattern. Adding a new CLI is one 30-line file.
-
-## Quick start
+Coterie isn't on npm yet — install from source and link the `coterie` command
+onto your PATH:
 
 ```bash
-pip install coterie
-coterie run "find every bug in src/auth.py" \
-  --config examples/consensus.coterie.yaml
+git clone https://github.com/cxk280/coterie
+cd coterie/packages/coterie-js
+npm install
+npm run build      # compile TypeScript → dist/
+npm link           # puts `coterie` on your PATH globally
 ```
 
-Same task, different coordination:
+Verify:
 
 ```bash
-coterie run "refactor src/auth.py to remove the legacy middleware" \
-  --config examples/adversarial.coterie.yaml
+coterie --help     # should list `chat` and `run`
 ```
 
-A minimal config:
+## Use it
 
-```yaml
-# examples/adversarial.coterie.yaml
-version: 1
-mode: adversarial
-agents:
-  - id: implementer
-    adapter: claude-code
-    strengths: [implementation]
-  - id: critic
-    adapter: codex
-    strengths: [adversarial-review, edge-cases]
-adversarial:
-  implementer: implementer
-  auditor: critic
-  judge:
-    model: claude-opus-4-7
-    sustain_threshold: medium
-  max_rounds: 3
+```bash
+cd ~/your-project          # the repo the agents read/edit (the "workdir")
+coterie chat               # adversarial by default; runs in the current directory
 ```
 
-See [`examples/`](examples/) for one config per mode and [`docs/modes.md`](docs/modes.md) for when to pick each.
+Then just talk to it. Each turn runs a full multi-agent round behind the scenes;
+the answer (and any file edits) is the result.
 
-## Architecture
+**In-session commands:** `/mode <name>` (switch strategy per prompt) ·
+`/show` `/hide` (the live round trace) · `/clear` (forget the conversation) ·
+`/help` · `/exit`
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│  cli.py  (composition root: picks LLM provider + executor)      │
-│     │                                                           │
-│     ▼                                                           │
-│  graph.build_graph(config, executor, supervisor_llm, …)         │
-│     │                                                           │
-│     ▼                                                           │
-│  modes/{single,consensus,adversarial,debate,tournament}.py      │
-│     │     (each builds a StateGraph; @register_mode)            │
-│     ▼                                                           │
-│  nodes/{planner,agent_runner,supervisor,auditor,…}.py           │
-│     │     (graph node factories; take LLMClient via ctor)       │
-│     ▼                                                           │
-│  adapters/{claude_code,codex,fake,…}.py                         │
-│           (CLIAdapter subclasses; @register_adapter)            │
-│                                                                 │
-│  core/                                                          │
-│    registry.py    — ADAPTER_REGISTRY, MODE_REGISTRY, decorators │
-│    llm/base.py    — LLMClient ABC (one method: chat)            │
-│    llm/anthropic_client.py, openai_compat.py, scripted.py       │
-│    executor.py    — AdapterExecutor Protocol +                  │
-│                     LocalSubprocessExecutor                     │
-│    state.py       — CoterieState + reducers                     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Flags:** `coterie chat --mode debate --workdir ~/other-repo --quiet`
 
-Two implementations behind every abstraction (`AdapterExecutor` →
-`LocalSubprocessExecutor` + `IsolatedWorktreeExecutor`, `LLMClient` → five
-concretes including `ScriptedLLMClient`) keep the seams testable and make
-the v0.2 `DockerSwarmExecutor` a one-commit diff.
+## The five modes
 
-## Two runtimes
-
-| Runtime | Package | Status |
+| Mode | What happens | Best for |
 |---|---|---|
-| Python | [`coterie`](https://pypi.org/project/coterie/) on PyPI | ✅ All 5 modes |
-| Node / TS | [`coterie`](https://www.npmjs.com/package/coterie) on npm | ✅ All 5 modes |
+| `single` | a router picks one agent | quick edits, simple asks |
+| `adversarial` | implementer + auditor + judge, with a refinement loop | reliable code changes (default) |
+| `debate` | two agents argue; a moderator + judge decide | decisions, tradeoffs |
+| `tournament` | N agents compete; a bracket judge ranks | best-of-N for critical work |
+| `consensus` | agents answer independently; an engine merges agreement | reviews, audits |
 
-Both share the YAML schema at [`schemas/coterie.config.schema.json`](schemas/coterie.config.schema.json) and the same CLI UX (`coterie run "..." --config ...`). The adapter interface is the same on both sides — a Python-orchestrated team can include JS-implemented adapters via subprocess, and vice versa.
+Coding edits land cleanest in `single` / `adversarial` (one implementer, gated by
+the auditor/judge). `debate` / `tournament` / `consensus` produce a synthesized
+**answer** rather than competing edits — use them for decisions and
+high-confidence responses. More detail: [docs/modes.md](docs/modes.md).
 
-## Coordination runs on your subscription ($0 metered)
+## Why it's built this way
 
-The agents are subscription-backed CLIs, and the **coordination** LLMs
-(router / judge / consensus engine / moderator) run on your **Claude
-subscription** too, via `claude -p`. A whole turn is **$0 metered** — no API
-keys, no surprise bills.
+1. **LangGraph as the spine** — each mode is a `StateGraph`, so you get
+   resumability, branch parallelism, and clean per-node streaming for the live trace.
+2. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor;
+   each keeps its own model, prompt scaffolding, and tool harness. Coterie decides
+   who runs what under which coordination pattern. Adding a new CLI is one small adapter.
+3. **Subscription-only, by design** — coordination runs on your Claude
+   subscription via `claude -p`; there is intentionally **no pay-as-you-go API
+   backend** so a session can never run up a metered bill. A pluggable provider
+   could be added later for keyless environments — it's deliberately not wired in today.
 
-**There is intentionally no pay-as-you-go API backend yet.** Coordination talks
-through a one-method `LLMClient` seam, so a metered provider (Anthropic, or an
-OpenAI-compatible one like Groq / xAI) *could* be slotted in for environments
-without the subscription CLIs — but it's deliberately **not wired in today**, to
-keep a session from ever running up a metered cost. It may be added in the
-future. (The only other `LLMClient` is `Scripted`, used by the offline tests.)
+> **Grok is deferred:** unlike Claude / Codex / Cursor it has no
+> subscription-backed headless coding CLI (only the pay-as-you-go xAI API), so it
+> can't join the $0-metered lineup yet.
 
-## Status
-
-**Alpha — v0.1.0.** All five modes implemented in both runtimes — Python (62 tests) and TypeScript (27 tests), all using `FakeAdapter` + `ScriptedLLMClient` so the suites need no API keys, no network, and no subprocesses to run. Budget enforcement, LLM planner, workdir isolation (`IsolatedWorktreeExecutor`), HIL checkpoints via `interrupt_before`, and multi-round tournament bracket all ship in v0.1.
-
-Roadmap and known limitations: [`docs/design.md`](docs/design.md).
-
-## Observability
-
-Every meaningful unit of work — graph runs, LangGraph nodes, LLM calls, CLI
-agent invocations — becomes an OpenTelemetry span with `coterie.*` and
-`gen_ai.*` semantic attributes (mode, agent id, model, token counts, exit
-code, cost). Tracing is **off by default**; flip it on by setting any of these
-env vars:
+## One-shot (non-conversational)
 
 ```bash
-# Self-hosted Langfuse (recommended)
-export LANGFUSE_HOST=http://localhost:3001
-export LANGFUSE_PUBLIC_KEY=pk-lf-...
-export LANGFUSE_SECRET_KEY=sk-lf-...
-
-# Or LangSmith
-export LANGSMITH_API_KEY=ls-...
-
-# Or any OTLP/HTTP collector
-export OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com/v1/traces
+coterie run "find every bug in src/auth.ts" --config examples/consensus.coterie.yaml
 ```
 
-A complete self-hosted Langfuse stack (web + worker + Postgres + ClickHouse
-+ Redis + MinIO) lives at [`infra/langfuse/`](infra/langfuse/) — `docker
-compose up -d` and you're collecting traces locally. The web dashboard's
-run-detail page deep-links each run to its Langfuse trace.
+Runs a single task through one mode from a YAML config (see [examples/](examples/))
+and prints the result.
 
-## Deploy
-
-`docker compose up -d --build` runs the full app locally (API + web + volume).
-For a hosted deploy on Railway — services, env vars, the `/data` volume,
-self-hosted Langfuse, and the CircleCI gated `deploy` job — see
-[docs/deploy.md](docs/deploy.md). Security posture + hardening checklist live in
-[docs/security.md](docs/security.md).
-
-## Tests run without API keys
-
-Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). The same `Protocol` that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.
+## Develop
 
 ```bash
-cd packages/coterie-py && pytest -v
-# 36 passed in 0.55s
+cd packages/coterie-js
+npm test            # vitest — fully offline (FakeAdapter + ScriptedLLMClient, no CLIs/network)
+npm run build       # tsc → dist/
 ```
 
 ## License
 
 [MIT](LICENSE). Copyright © 2026 Chris King.
-
-The CLIs Coterie orchestrates (Claude Code, Codex, Cursor, Aider) are invoked as
-subprocesses and are not bundled. Install and authenticate them separately.
