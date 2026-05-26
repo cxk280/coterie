@@ -28,9 +28,34 @@ def mode_profiles() -> dict[str, dict[str, Any]]:
     }
 
 
-def build_config(*, mode: str, task: BenchTask) -> dict[str, Any]:
-    profile = mode_profiles()[mode]
-    return {**profile, "mode": mode}
+# Agent ids backed by a CLI that's actually installed + authenticated here.
+# aider / cursor are not, so they're dropped from real runs.
+_REAL_ADAPTERS = {"claude-code": "claude-code", "codex": "codex"}
+
+
+def build_config(*, mode: str, task: BenchTask, mock: bool = True) -> dict[str, Any]:
+    profile = {**mode_profiles()[mode], "mode": mode}
+    if mock:
+        return profile  # agents already use the in-process FakeAdapter
+
+    # Real run: keep only agents whose CLI is available, bound to the real
+    # adapter, and prune the role/participant lists to the survivors.
+    kept_ids: set[str] = set()
+    real_agents = []
+    for a in profile["agents"]:
+        real = _REAL_ADAPTERS.get(a["id"])
+        if real:
+            real_agents.append({**a, "adapter": real})
+            kept_ids.add(a["id"])
+    profile["agents"] = real_agents
+
+    for block, key in (("consensus", "participants"), ("tournament", "participants"), ("debate", "sides")):
+        if block in profile:
+            profile[block] = {
+                **profile[block],
+                key: [x for x in profile[block][key] if x in kept_ids],
+            }
+    return profile
 
 
 def build_llms(*, mode: str, mock: bool, task: BenchTask) -> dict[str, Any]:

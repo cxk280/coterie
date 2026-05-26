@@ -36,6 +36,35 @@ alternatives:
 - **vs [RA.Aid](https://github.com/ai-christianson/RA.Aid)** — RA.Aid is one autonomous LangGraph agent. Coterie orchestrates many heterogeneous CLIs in N coordination patterns.
 - **vs [Deb8flow](https://towardsdatascience.com/deb8flow-orchestrating-autonomous-ai-debates-with-langgraph-and-gpt-4o/)** — Deb8flow does debate via in-process LLM calls. Coterie's debate mode debates between subprocess-wrapped CLIs (each runs its own model, prompt scaffolding, and tool harness).
 
+## Measured: cost / quality / latency
+
+The same 5-task corpus run through every applicable mode, with **real agents** —
+Claude Code + Codex actually editing the workdir, graded on the result — not
+mocks. Coordination LLMs (router/judge/engine/moderator) run on the Anthropic
+API; the run cost **~$5.49** total.
+
+| Mode | Pass rate | Avg score | Avg cost | Avg latency |
+|---|---|---|---|---|
+| `consensus` | 100% | 1.00 | $0.20 | 29s |
+| `tournament` | 100% | 1.00 | $0.25 | 35s |
+| `debate` | 100% | 1.00 | $0.28 | 91s |
+| `adversarial` | 75% | 0.92 | $0.97 | 210s |
+| `single` | 50% | 0.83 | $0.31 | 33s |
+
+What the numbers actually say — and the honest caveats:
+
+- **`single` is cheap and fast but least reliable here** (50% pass — it fumbled a
+  rename task two other modes got right). One specialist, one shot.
+- **`adversarial` is the most expensive and slowest, because it does the most
+  work** — its average is dragged up by an implement-a-checkout-endpoint cell
+  that ran **4 agent passes, surfaced 8 sustained findings, and cost $2.95 over
+  ~10 min**. That's the implementer/auditor/judge loop earning its keep.
+- **`consensus` / `tournament` / `debate` hit the best cost-quality balance** on
+  this corpus.
+- **Caveat:** small n (10 cells, 1–4 per mode) on one synthetic corpus — directional,
+  not a leaderboard. Reproduce with `coterie-bench run --real`; raw rows + the
+  Pareto plot are in [`packages/coterie-bench/results/`](packages/coterie-bench/results/).
+
 ## Why LangGraph, why subprocess CLIs
 
 Two architectural choices that don't appear together anywhere else:

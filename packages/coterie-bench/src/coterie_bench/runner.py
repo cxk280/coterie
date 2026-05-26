@@ -104,7 +104,7 @@ def _seed_workdir(workdir: Path, contents: dict[str, str]) -> None:
 
 
 def _run_one(task: BenchTask, mode: str, workdir: Path, *, mock: bool) -> RunResult:
-    cfg = build_config(mode=mode, task=task)
+    cfg = build_config(mode=mode, task=task, mock=mock)
     llms = build_llms(mode=mode, mock=mock, task=task)
     executor = (
         IsolatedWorktreeExecutor()

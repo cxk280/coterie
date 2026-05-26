@@ -320,6 +320,8 @@ export interface components {
             mode: "single" | "consensus" | "adversarial" | "debate" | "tournament";
             /** Task */
             task: string;
+            /** Workdir */
+            workdir?: string | null;
         };
         /** CreateTokenRequest */
         CreateTokenRequest: {

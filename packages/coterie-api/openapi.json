@@ -22,6 +22,17 @@
           "task": {
             "title": "Task",
             "type": "string"
+          },
+          "workdir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workdir"
           }
         },
         "required": [

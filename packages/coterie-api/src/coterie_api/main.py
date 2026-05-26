@@ -202,9 +202,11 @@ async def create_run(
 ) -> RunSummary:
     # Enforce the per-user daily budget before scheduling any work.
     check_budget(app.state.store, user)
+    if req.workdir is not None and not Path(req.workdir).is_dir():
+        raise HTTPException(400, f"workdir does not exist or is not a directory: {req.workdir}")
     runner: Runner = app.state.runner
     run_id = await runner.create_run(
-        task=req.task, mode=req.mode, config=req.config, owner_id=user.id
+        task=req.task, mode=req.mode, config=req.config, owner_id=user.id, workdir=req.workdir
     )
     run = app.state.store.get_run(run_id)
     return _to_summary(run)

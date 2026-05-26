@@ -5,12 +5,13 @@ import { expect, test } from "@playwright/test";
  * fall back to mock-data so the tests stay green without a running backend.
  */
 
-test("dashboard renders task input + mode picker + Run button", async ({ page }) => {
+test("dashboard renders the run form: task + workdir + mode picker + Run", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "New run" })).toBeVisible();
-  // Task input panel — pick the <p> in main, not the left-rail link.
-  await expect(page.locator("main").getByText(/Refactor src\/auth\.ts/i)).toBeVisible();
-  // All five mode chips are present.
+  // Task + workdir inputs.
+  await expect(page.getByPlaceholder(/retry decorator/i)).toBeVisible();
+  await expect(page.getByPlaceholder(/Absolute path to the repo/i)).toBeVisible();
+  // All five mode buttons are present.
   for (const mode of ["single", "consensus", "adversarial", "debate", "tournament"]) {
     await expect(page.getByRole("button", { name: new RegExp(mode, "i") })).toBeVisible();
   }
