@@ -29,8 +29,9 @@ answers when asked.
 
 It drives the **real coding-agent CLIs you already have — Claude Code + Codex
 (Cursor optional) — on your subscriptions**, and the behind-the-scenes
-coordination can run on your Claude subscription too, so a full turn is **$0
-metered**. Full usage: [packages/coterie-js/README.md](packages/coterie-js/README.md).
+coordination runs on your Claude subscription too, so a full turn is **$0
+metered** (no API keys, no pay-as-you-go). Full usage:
+[packages/coterie-js/README.md](packages/coterie-js/README.md).
 
 Prefer a browser? The web app embeds the **same CLI in a real terminal** — run
 `npm run terminal:bridge` in `packages/coterie-web` and open `/terminal` for
@@ -179,28 +180,19 @@ the v0.2 `DockerSwarmExecutor` a one-commit diff.
 
 Both share the YAML schema at [`schemas/coterie.config.schema.json`](schemas/coterie.config.schema.json) and the same CLI UX (`coterie run "..." --config ...`). The adapter interface is the same on both sides — a Python-orchestrated team can include JS-implemented adapters via subprocess, and vice versa.
 
-## Provider-agnostic LLM layer
+## Coordination runs on your subscription ($0 metered)
 
-Coterie talks to LLMs via a one-method `LLMClient` ABC. Today's concretes:
+The agents are subscription-backed CLIs, and the **coordination** LLMs
+(router / judge / consensus engine / moderator) run on your **Claude
+subscription** too, via `claude -p`. A whole turn is **$0 metered** — no API
+keys, no surprise bills.
 
-- **Anthropic** (default) — `claude-haiku-4-5`, `claude-opus-4-7`, etc.
-- **OpenAI** — `gpt-4o-mini`, `o3`, etc.
-- **Groq** (OpenAI-compatible) — `llama-3.3-70b-versatile`.
-- **xAI** (OpenAI-compatible) — `grok-2-latest`.
-- **Scripted** — replays from JSON. Use in tests; use on stage when the WiFi melts.
-
-Each role in a mode can use a different provider:
-
-```yaml
-mode: adversarial
-adversarial:
-  implementer: claude    # this agent uses Claude
-  auditor: codex         # this one uses Codex
-  judge:
-    model: gpt-4o-mini   # Coterie infers OpenAI from the model name
-```
-
-Set `COTERIE_LLM_PROVIDER=groq` to force a provider for a session.
+**There is intentionally no pay-as-you-go API backend yet.** Coordination talks
+through a one-method `LLMClient` seam, so a metered provider (Anthropic, or an
+OpenAI-compatible one like Groq / xAI) *could* be slotted in for environments
+without the subscription CLIs — but it's deliberately **not wired in today**, to
+keep a session from ever running up a metered cost. It may be added in the
+future. (The only other `LLMClient` is `Scripted`, used by the offline tests.)
 
 ## Status
 
