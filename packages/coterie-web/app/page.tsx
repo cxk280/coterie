@@ -34,7 +34,7 @@ export default function DashboardPage() {
       <div className="flex flex-1 overflow-hidden">
         <LeftRail />
 
-        <main className="flex flex-1 flex-col gap-8 overflow-y-auto px-14 py-12">
+        <main className="flex flex-1 flex-col gap-8 overflow-y-auto px-4 py-8 sm:px-8 lg:px-14 lg:py-12">
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
             New run
           </h1>
@@ -65,7 +65,7 @@ export default function DashboardPage() {
           {/* Agents */}
           <section className="flex flex-col gap-3">
             <Label>AGENTS</Label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <AgentCard
                 agentId="claude-code"
                 role="implementer"

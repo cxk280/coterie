@@ -3,29 +3,35 @@
 /* ============================================================
  * Coterie design tokens (mirrors schemas/coterie.config.schema.json
  * and the Figma file at https://www.figma.com/design/EYBMgxiSo24ymGh066uy3z).
- * Dark mode is the only mode — there is no light theme.
+ *
+ * Surface/text/border tokens are theme-swappable: `@theme inline` aliases the
+ * Tailwind `--color-*` tokens to runtime `--ct-*` variables, which `:root`
+ * (dark, default) and `:root.light` redefine. next-themes toggles the `.light`
+ * class on <html>. Mode accents / status / severity are theme-independent.
  * ============================================================ */
 
-@theme {
+@theme inline {
   /* Backgrounds */
-  --color-bg-canvas: #0a0b0d;
-  --color-bg-surface: #14161a;
-  --color-bg-raised: #1c1f24;
-  --color-bg-hover: #242830;
-  --color-bg-active: #2d333b;
+  --color-bg-canvas: var(--ct-bg-canvas);
+  --color-bg-surface: var(--ct-bg-surface);
+  --color-bg-raised: var(--ct-bg-raised);
+  --color-bg-hover: var(--ct-bg-hover);
+  --color-bg-active: var(--ct-bg-active);
 
   /* Text */
-  --color-text-primary: #f0f1f3;
-  --color-text-secondary: #9ca3af;
-  --color-text-tertiary: #6b7280;
-  --color-text-disabled: #4b5563;
+  --color-text-primary: var(--ct-text-primary);
+  --color-text-secondary: var(--ct-text-secondary);
+  --color-text-tertiary: var(--ct-text-tertiary);
+  --color-text-disabled: var(--ct-text-disabled);
 
   /* Borders */
-  --color-border-subtle: #22262c;
-  --color-border-default: #2d333b;
-  --color-border-strong: #3b4250;
+  --color-border-subtle: var(--ct-border-subtle);
+  --color-border-default: var(--ct-border-default);
+  --color-border-strong: var(--ct-border-strong);
+}
 
-  /* Mode accents */
+@theme {
+  /* Mode accents (theme-independent) */
   --color-mode-single: #06b6d4;
   --color-mode-consensus: #8b5cf6;
   --color-mode-adversarial: #ec4899;
@@ -55,6 +61,46 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
+}
+
+/* Dark theme — the default, applied even before the theme class resolves. */
+:root {
+  --ct-bg-canvas: #0a0b0d;
+  --ct-bg-surface: #14161a;
+  --ct-bg-raised: #1c1f24;
+  --ct-bg-hover: #242830;
+  --ct-bg-active: #2d333b;
+
+  --ct-text-primary: #f0f1f3;
+  --ct-text-secondary: #9ca3af;
+  --ct-text-tertiary: #6b7280;
+  --ct-text-disabled: #4b5563;
+
+  --ct-border-subtle: #22262c;
+  --ct-border-default: #2d333b;
+  --ct-border-strong: #3b4250;
+
+  color-scheme: dark;
+}
+
+/* Light theme. */
+:root.light {
+  --ct-bg-canvas: #ffffff;
+  --ct-bg-surface: #f7f8fa;
+  --ct-bg-raised: #eef1f5;
+  --ct-bg-hover: #e6eaf0;
+  --ct-bg-active: #dde2ea;
+
+  --ct-text-primary: #14161a;
+  --ct-text-secondary: #4b5563;
+  --ct-text-tertiary: #6b7280;
+  --ct-text-disabled: #9ca3af;
+
+  --ct-border-subtle: #e8eaee;
+  --ct-border-default: #d6dae0;
+  --ct-border-strong: #b3bac4;
+
+  color-scheme: light;
 }
 
 /* Reset + global defaults */

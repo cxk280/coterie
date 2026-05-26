@@ -4,7 +4,7 @@ import { RECENT_RUNS } from "@/lib/mock-data";
 export function LeftRail() {
   return (
     <aside
-      className="flex w-[280px] flex-col gap-1 border-r px-4 py-5"
+      className="hidden w-[280px] flex-col gap-1 border-r px-4 py-5 md:flex"
       style={{
         background: "var(--color-bg-surface)",
         borderColor: "var(--color-border-subtle)",
