@@ -51,3 +51,10 @@ test("first-run state renders the welcome panel", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /Welcome to Coterie/i })).toBeVisible();
   await expect(page.getByText(/GET STARTED/i)).toBeVisible();
 });
+
+test("terminal page renders and prompts to start the bridge when none is running", async ({ page }) => {
+  await page.goto("/terminal");
+  await expect(page.getByText("coterie chat")).toBeVisible();
+  // With no bridge on :3051 the connection isn't open, so the hint shows.
+  await expect(page.getByText(/terminal:bridge/)).toBeVisible();
+});

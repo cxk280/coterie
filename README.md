@@ -32,6 +32,10 @@ It drives the **real coding-agent CLIs you already have — Claude Code + Codex
 coordination can run on your Claude subscription too, so a full turn is **$0
 metered**. Full usage: [packages/coterie-js/README.md](packages/coterie-js/README.md).
 
+Prefer a browser? The web app embeds the **same CLI in a real terminal** — run
+`npm run terminal:bridge` in `packages/coterie-web` and open `/terminal` for
+`coterie chat` in the browser alongside the dashboard's richer UI.
+
 ## What's different about this
 
 The 2026 multi-CLI orchestrator space is crowded. Every other tool gives you
