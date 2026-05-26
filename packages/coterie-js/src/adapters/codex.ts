@@ -4,9 +4,13 @@ import { registerAdapter } from "../core/registry.js";
 export class CodexAdapter extends CLIAdapter {
   static readonly adapterName = "codex";
 
-  buildCommand(prompt: string): string[] {
-    const cmd = ["codex", "exec", prompt];
+  buildCommand(prompt: string, _workdir: string, extra: Record<string, unknown> = {}): string[] {
+    // workspace-write sandboxes edits to the cwd; --skip-git-repo-check lets exec
+    // run in a plain (non-git) workdir. Autonomous but contained.
+    const sandbox = (extra.sandbox as string) ?? "workspace-write";
+    const cmd = ["codex", "exec", "--skip-git-repo-check", "-s", sandbox];
     if (this.model) cmd.push("--model", this.model);
+    cmd.push(prompt);
     return cmd;
   }
 
