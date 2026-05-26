@@ -19,6 +19,13 @@ export interface CLIAdapterCtor {
 export abstract class CLIAdapter {
   static readonly adapterName: string;
 
+  /**
+   * Env vars stripped from the agent subprocess. Lets an adapter force its CLI
+   * onto its own auth (e.g. a subscription session) instead of an API key that
+   * Coterie's coordination LLMs need in-process.
+   */
+  static readonly stripEnv: readonly string[] = [];
+
   constructor(
     public readonly agent_id: string,
     public readonly opts: { model?: string } = {},
@@ -26,6 +33,14 @@ export abstract class CLIAdapter {
 
   get model(): string | undefined {
     return this.opts.model;
+  }
+
+  private subprocessEnv(): NodeJS.ProcessEnv | undefined {
+    const strip = (this.constructor as typeof CLIAdapter).stripEnv;
+    if (!strip.length) return undefined; // inherit process.env
+    const env = { ...process.env };
+    for (const key of strip) delete env[key];
+    return env;
   }
 
   abstract buildCommand(
@@ -53,6 +68,8 @@ export abstract class CLIAdapter {
       cwd: workdir,
       encoding: "utf8",
       timeout: opts.timeoutMs ?? 600_000,
+      env: this.subprocessEnv(),
+      maxBuffer: 32 * 1024 * 1024,
     });
     const result = this.parseResult(
       proc.stdout ?? "",
