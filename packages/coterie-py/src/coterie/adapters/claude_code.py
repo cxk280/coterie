@@ -10,9 +10,18 @@ from coterie.core.registry import register_adapter
 @register_adapter
 class ClaudeCodeAdapter(CLIAdapter):
     name: ClassVar[str] = "claude-code"
+    # Run on the user's Claude subscription (OAuth session), not a pay-per-token
+    # API key — Coterie's coordination LLMs use ANTHROPIC_API_KEY in-process, but
+    # the agent CLI should bill against the subscription.
+    strip_env: ClassVar[tuple[str, ...]] = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
     def build_command(self, prompt: str, workdir: str, *, extra: dict) -> list[str]:
-        cmd = ["claude", "-p", prompt, "--output-format", "json"]
+        # acceptEdits lets the agent apply file edits without a prompt (the only
+        # way it can actually do work headlessly) while still gating riskier
+        # tools — safe to run against an isolated workdir. Override via
+        # extra["permission_mode"] if a caller wants a different posture.
+        permission_mode = extra.get("permission_mode", "acceptEdits")
+        cmd = ["claude", "-p", prompt, "--output-format", "json", "--permission-mode", permission_mode]
         if self.model:
             cmd.extend(["--model", self.model])
         return cmd

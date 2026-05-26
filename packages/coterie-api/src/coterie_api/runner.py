@@ -115,7 +115,7 @@ class Runner:
         llms = _build_llms_for(config)
         graph = build_graph(
             config=config,
-            workdir=".",
+            workdir=config.get("workdir") or ".",
             executor=executor,
             checkpointer=self._checkpointer,
             **llms,
@@ -136,6 +136,7 @@ class Runner:
         mode: Mode,
         config: dict[str, Any],
         owner_id: str | None = None,
+        workdir: str | None = None,
     ) -> str:
         # Shed load before accepting work we can't make progress on. The pool's
         # internal queue is unbounded, so without this a burst would accept
@@ -150,7 +151,9 @@ class Runner:
                 headers={"Retry-After": "5"},
             )
         run_id = uuid.uuid4().hex[:12]
-        config = {**config, "mode": mode}
+        # Persist workdir in the config so it survives a restart (resume needs
+        # it); the graph receives it as an explicit arg, not from config.
+        config = {**config, "mode": mode, "workdir": workdir or "."}
         self.store.insert_run(run_id, task, mode, config, owner_id=owner_id)
         self._inflight_runs.add(run_id)
         self._subscribers[run_id] = []
@@ -248,7 +251,7 @@ class Runner:
                 llms = _build_llms_for(config)
                 graph = build_graph(
                     config=config,
-                    workdir=".",
+                    workdir=config.get("workdir") or ".",
                     executor=executor,
                     checkpointer=self._checkpointer,
                     **llms,

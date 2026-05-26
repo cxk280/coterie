@@ -20,6 +20,9 @@ class CreateRunRequest(BaseModel):
     task: str
     mode: Mode
     config: dict[str, Any]
+    # Directory the agents run in (where code gets created/edited). Defaults to
+    # the API process's cwd. Must be an existing directory on the server.
+    workdir: str | None = None
 
 
 class RunSummary(BaseModel):

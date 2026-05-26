@@ -8,6 +8,7 @@ Concrete adapters declare ``name: ClassVar[str]`` and register via
 ``@register_adapter``.
 """
 
+import os
 import subprocess
 import time
 from abc import ABC, abstractmethod
@@ -34,9 +35,19 @@ OnOutput = Callable[[str], None]
 class CLIAdapter(ABC):
     name: ClassVar[str]  # required on subclasses; used by @register_adapter
 
+    # Env vars stripped from the agent subprocess. Lets an adapter force its CLI
+    # onto its own auth (e.g. a subscription session) instead of an API key that
+    # Coterie's coordination LLMs need in-process.
+    strip_env: ClassVar[tuple[str, ...]] = ()
+
     def __init__(self, agent_id: str, *, model: str | None = None) -> None:
         self.agent_id = agent_id
         self.model = model
+
+    def _subprocess_env(self) -> dict[str, str] | None:
+        if not self.strip_env:
+            return None
+        return {k: v for k, v in os.environ.items() if k not in self.strip_env}
 
     @abstractmethod
     def build_command(self, prompt: str, workdir: str, *, extra: dict) -> list[str]:
@@ -56,6 +67,7 @@ class CLIAdapter(ABC):
         on_output: OnOutput | None = None,
     ) -> AdapterResult:
         cmd = self.build_command(prompt, workdir, extra=extra or {})
+        env = self._subprocess_env()
         t0 = time.time()
 
         if on_output is not None:
@@ -64,6 +76,7 @@ class CLIAdapter(ABC):
                 cwd=workdir,
                 timeout_s=timeout_s,
                 on_output=on_output,
+                env=env,
             )
             result = self.parse_result(stream.stdout, stream.stderr, stream.exit_code)
             if stream.timed_out:
@@ -76,6 +89,7 @@ class CLIAdapter(ABC):
                 text=True,
                 timeout=timeout_s,
                 check=False,
+                env=env,
             )
             result = self.parse_result(proc.stdout, proc.stderr, proc.returncode)
         result.duration_s = time.time() - t0
