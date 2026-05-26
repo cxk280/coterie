@@ -182,6 +182,14 @@ A complete self-hosted Langfuse stack (web + worker + Postgres + ClickHouse
 compose up -d` and you're collecting traces locally. The web dashboard's
 run-detail page deep-links each run to its Langfuse trace.
 
+## Deploy
+
+`docker compose up -d --build` runs the full app locally (API + web + volume).
+For a hosted deploy on Railway — services, env vars, the `/data` volume,
+self-hosted Langfuse, and the CircleCI gated `deploy` job — see
+[docs/deploy.md](docs/deploy.md). Security posture + hardening checklist live in
+[docs/security.md](docs/security.md).
+
 ## Tests run without API keys
 
 Every test uses `FakeAdapter` (returns scripted `AdapterResult`s, never spawns) and `ScriptedLLMClient` (replays a queue of strings). The same `Protocol` that makes the supervisor flexible makes it testable. Hot reload, full coverage, no rate limits.
