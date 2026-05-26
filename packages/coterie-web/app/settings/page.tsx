@@ -20,7 +20,7 @@ export default function SettingsPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Side nav */}
         <aside
-          className="flex w-60 flex-col gap-1 border-r px-4 py-7"
+          className="hidden w-60 flex-col gap-1 border-r px-4 py-7 md:flex"
           style={{
             background: "var(--color-bg-surface)",
             borderColor: "var(--color-border-subtle)",
@@ -48,7 +48,7 @@ export default function SettingsPage() {
         </aside>
 
         {/* Content */}
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-7 overflow-y-auto px-14 py-10">
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-7 overflow-y-auto px-4 py-10 sm:px-8 lg:px-14">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
               Providers
@@ -109,9 +109,9 @@ export default function SettingsPage() {
                 </span>
               </header>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span
-                  className="w-40 font-mono text-xs"
+                  className="font-mono text-xs sm:w-40"
                   style={{ color: "var(--color-text-tertiary)" }}
                 >
                   {p.envKey}

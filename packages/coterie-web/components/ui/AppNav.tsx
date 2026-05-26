@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-import { Button } from "./Button";
 import { SpendChip } from "./SpendChip";
+import { ThemeToggle } from "./theme";
 
 interface AppNavProps {
   active?: "runs" | "agents" | "settings";
@@ -15,7 +15,7 @@ interface AppNavProps {
 export function AppNav({ active = "runs", spendChip }: AppNavProps) {
   return (
     <header
-      className="flex h-14 items-center gap-4 border-b px-6"
+      className="flex h-14 items-center gap-2 border-b px-4 sm:gap-4 sm:px-6"
       style={{
         background: "var(--color-bg-surface)",
         borderColor: "var(--color-border-subtle)",
@@ -37,7 +37,12 @@ export function AppNav({ active = "runs", spendChip }: AppNavProps) {
         Settings
       </NavLink>
 
-      {spendChip && <SpendChip current={spendChip.current} cap={spendChip.cap} />}
+      {spendChip && (
+        <span className="hidden sm:inline-flex">
+          <SpendChip current={spendChip.current} cap={spendChip.cap} />
+        </span>
+      )}
+      <ThemeToggle />
     </header>
   );
 }

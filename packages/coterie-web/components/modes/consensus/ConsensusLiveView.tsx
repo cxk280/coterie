@@ -21,7 +21,7 @@ export function ConsensusLiveView({ state }: LiveBodyProps) {
   const participants = (state.runs as any[]).filter((r) => r.role === "consensus-participant");
 
   return (
-    <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-12 py-8" style={{ background: "var(--color-bg-canvas)" }}>
+    <main className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-8 sm:px-8 lg:px-12" style={{ background: "var(--color-bg-canvas)" }}>
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold" style={{ color: "var(--color-text-primary)" }}>
           Clusters
@@ -43,7 +43,8 @@ export function ConsensusLiveView({ state }: LiveBodyProps) {
           {state.status === "consensus-scoring" ? "engine clustering findings…" : "waiting for participants to complete…"}
         </div>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <div className="overflow-x-auto">
+        <ul className="flex min-w-[680px] flex-col gap-2">
           {clusters.map((c, i) => (
             <li
               key={i}
@@ -92,6 +93,7 @@ export function ConsensusLiveView({ state }: LiveBodyProps) {
             </li>
           ))}
         </ul>
+        </div>
       )}
     </main>
   );

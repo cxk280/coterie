@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { api } from "@/lib/api";
 
 interface TokenRow {
@@ -135,9 +136,11 @@ export function TokenManager() {
 
       <div className="flex flex-col gap-2">
         {tokens === null && (
-          <p className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>
-            Loading…
-          </p>
+          <div className="flex flex-col gap-2" aria-busy>
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-[58px] w-full" />
+            ))}
+          </div>
         )}
         {tokens?.length === 0 && (
           <p className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>

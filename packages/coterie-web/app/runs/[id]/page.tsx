@@ -22,7 +22,7 @@ export default async function RunDetailPage({ params }: PageProps) {
   return (
     <div className="flex h-screen flex-col">
       <header
-        className="flex h-14 items-center gap-3 border-b px-6"
+        className="flex h-14 items-center gap-3 border-b px-4 sm:px-6"
         style={{
           background: "var(--color-bg-surface)",
           borderColor: "var(--color-border-subtle)",
@@ -43,7 +43,7 @@ export default async function RunDetailPage({ params }: PageProps) {
         <ModeBadge mode={summary.mode} />
 
         <span
-          className="line-clamp-1 max-w-[540px] text-sm font-medium"
+          className="hidden max-w-[540px] truncate text-sm font-medium sm:line-clamp-1 sm:inline"
           style={{ color: "var(--color-text-primary)" }}
         >
           {summary.task}
@@ -82,10 +82,10 @@ export default async function RunDetailPage({ params }: PageProps) {
         )}
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         {/* Timeline */}
         <section
-          className="flex flex-1 flex-col gap-3 overflow-y-auto px-8 py-7"
+          className="flex flex-1 flex-col gap-3 px-4 py-7 sm:px-8 lg:overflow-y-auto"
           style={{ background: "var(--color-bg-canvas)" }}
         >
           <div className="flex items-center gap-3">
@@ -167,8 +167,8 @@ export default async function RunDetailPage({ params }: PageProps) {
 
         {/* Cost + state sidebar */}
         <aside
-          className="flex w-[440px] flex-col gap-6 overflow-y-auto px-5 py-7"
-          style={{ background: "var(--color-bg-surface)" }}
+          className="flex w-full flex-col gap-6 border-t px-5 py-7 lg:w-[440px] lg:border-t-0 lg:overflow-y-auto"
+          style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
         >
           <section className="flex flex-col gap-3">
             <SectionLabel>COST BREAKDOWN</SectionLabel>

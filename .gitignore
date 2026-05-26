@@ -28,6 +28,9 @@ dist/
 .DS_Store
 *.swp
 
+# Claude Code local runtime state
+.claude/
+
 # Coterie runtime
 .coterie/
 .coterie-checkpoints/

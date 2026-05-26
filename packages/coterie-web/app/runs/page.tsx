@@ -85,7 +85,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
     <div className="flex h-screen flex-col">
       <AppNav active="runs" />
 
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 overflow-y-auto px-12 py-8">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-8 lg:px-12">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
             Run history
@@ -96,7 +96,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
           </Link>
         </div>
 
-        <section className="grid grid-cols-5 gap-3">
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard label="RUNS THIS WEEK" value={String(RUN_STATS.runs_this_week)} />
           <StatCard label="AVG COST / RUN" value={`$${RUN_STATS.avg_cost_usd.toFixed(2)}`} />
           <StatCard
@@ -108,7 +108,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
           <StatCard label="AVG DURATION" value={`${RUN_STATS.avg_duration_s}s`} />
         </section>
 
-        <section className="flex items-center gap-2">
+        <section className="flex flex-wrap items-center gap-2">
           <FilterChip active={!mode} href={filterHref()}>
             all {total}
           </FilterChip>
@@ -117,9 +117,9 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
               {m}
             </FilterChip>
           ))}
-          <div className="flex-1" />
+          <div className="hidden flex-1 lg:block" />
           <div
-            className="flex w-72 items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
+            className="hidden w-72 items-center gap-2 rounded-md border px-3 py-1.5 text-xs lg:flex"
             style={{
               background: "var(--color-bg-surface)",
               borderColor: "var(--color-border-subtle)",
@@ -131,7 +131,8 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
           </div>
         </section>
 
-        <section className="flex flex-col gap-3">
+        <section className="overflow-x-auto">
+        <div className="flex min-w-[820px] flex-col gap-3">
           {runs.map((run) => (
             <Link
               key={run.id}
@@ -142,9 +143,9 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
                 borderColor: "var(--color-border-subtle)",
               }}
             >
-              <span className="size-2 rounded-full" style={{ background: STATUS_COLOR[run.status] }} />
+              <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_COLOR[run.status] }} />
 
-              <div className="flex w-[560px] flex-col gap-0.5">
+              <div className="flex w-[360px] flex-1 flex-col gap-0.5">
                 <span
                   className="line-clamp-1 text-sm font-medium"
                   style={{ color: "var(--color-text-primary)" }}
@@ -192,6 +193,7 @@ export default async function RunHistoryPage({ searchParams }: RunHistoryPagePro
               </span>
             </Link>
           ))}
+        </div>
         </section>
 
         {totalPages > 1 && (

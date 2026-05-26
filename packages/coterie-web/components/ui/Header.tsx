@@ -5,6 +5,7 @@ import type { Mode } from "@/lib/modes";
 import { ModeBadge } from "./ModeBadge";
 import { SpendChip } from "./SpendChip";
 import { StatusPill } from "./StatusPill";
+import { ThemeToggle } from "./theme";
 
 interface HeaderProps {
   mode?: Mode;
@@ -19,7 +20,7 @@ export function Header({ mode, runTitle, status, spend, rightActions, className 
   return (
     <header
       className={clsx(
-        "flex h-14 items-center gap-4 border-b px-6",
+        "flex h-14 items-center gap-3 border-b px-4 sm:gap-4 sm:px-6",
         className,
       )}
       style={{
@@ -47,6 +48,7 @@ export function Header({ mode, runTitle, status, spend, rightActions, className 
       {status && <StatusPill dotColor={status.dotColor} label={status.label} />}
       {spend && <SpendChip current={spend.current} cap={spend.cap} />}
       {rightActions}
+      <ThemeToggle />
     </header>
   );
 }
