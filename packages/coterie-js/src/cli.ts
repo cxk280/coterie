@@ -60,6 +60,22 @@ async function main() {
       process.exit(final.status === "done" ? 0 : 1);
     });
 
+  program
+    .command("chat")
+    .description("Conversational REPL: each turn runs through a coordination mode behind the scenes.")
+    .option("--mode <mode>", "Coordination mode (single|consensus|adversarial|debate|tournament)", "adversarial")
+    .option("--workdir <path>", "Directory the agents read/edit", ".")
+    .option("--quiet", "Start with the live round trace hidden", false)
+    .action(async (opts: { mode: string; workdir: string; quiet: boolean }) => {
+      const { runChat } = await import("./chat/repl.js");
+      const valid = ["single", "consensus", "adversarial", "debate", "tournament"];
+      if (!valid.includes(opts.mode)) {
+        console.error(`unknown mode '${opts.mode}'; pick one of ${valid.join(", ")}`);
+        process.exit(2);
+      }
+      await runChat({ mode: opts.mode as any, workdir: opts.workdir, quiet: opts.quiet });
+    });
+
   await program.parseAsync(process.argv);
 }
 
