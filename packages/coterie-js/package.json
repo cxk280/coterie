@@ -7,10 +7,10 @@
   "homepage": "https://coterie.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cking/coterie.git",
+    "url": "git+https://github.com/cxk280/coterie.git",
     "directory": "packages/coterie-js"
   },
-  "bugs": "https://github.com/cking/coterie/issues",
+  "bugs": "https://github.com/cxk280/coterie/issues",
   "keywords": [
     "langgraph",
     "agents",
@@ -18,7 +18,7 @@
     "orchestration",
     "claude",
     "codex",
-    "aider"
+    "cursor"
   ],
   "type": "module",
   "main": "./dist/index.js",

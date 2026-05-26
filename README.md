@@ -129,6 +129,11 @@ Pick the mode by how much scrutiny the request deserves: `single` is quickest,
 gather more perspectives before the finalizer acts. More detail:
 [docs/modes.md](docs/modes.md).
 
+Coterie builds each session's lineup from whichever agents are installed and
+signed in, and **assigns roles automatically** — for a two-seat mode like
+`adversarial`, the first available agent implements and the second audits; the
+many-agent modes use everyone. (Choosing roles by hand is on the roadmap.)
+
 ## Why it's built this way
 
 1. **Deliberate, then act** — splitting each turn into an advisory deliberation
@@ -148,6 +153,22 @@ gather more perspectives before the finalizer acts. More detail:
 > **Grok is deferred:** unlike Claude / Codex / Cursor it has no
 > subscription-backed headless coding CLI (only the pay-as-you-go xAI API), so it
 > can't join the $0-metered lineup yet.
+
+## Roadmap
+
+- **Manual role assignment per strategy.** Today Coterie auto-assigns roles from
+  your available agents (e.g. who implements vs. audits in `adversarial`). A
+  config will let you pin a specific installed agent to a specific role in each
+  mode — e.g. "Codex implements, Claude audits" — instead of taking the default
+  order.
+- **Pay-as-you-go API support.** Coterie is subscription-only today, by design,
+  so a session can never run up a metered bill. A pluggable API provider
+  (Anthropic / OpenAI-compatible / xAI) is planned for keyless or headless
+  environments where the subscription CLIs aren't available — opt-in, so the
+  default stays $0-metered.
+- **More agents.** The agent set is registry-driven; new coding-agent CLIs (incl.
+  Grok, once it ships a subscription-backed headless CLI) slot in as small
+  adapters and join `coterie doctor` and the lineup automatically.
 
 ## One-shot (non-conversational)
 

@@ -1,26 +1,44 @@
-/** Default in-memory configs per mode for `coterie chat`, wired to the
- *  subscription-backed agent CLIs (Claude Code + Codex). Mirrors the web
- *  run-configs. Cursor is opt-in (separate install) so it's not a default. */
+/** Default in-memory configs per mode for `coterie chat`. The agent lineup is
+ *  built from whichever agent CLIs are actually available (see
+ *  `availableAgents()`); roles within each strategy are assigned automatically
+ *  from that lineup in preference order. (Manual per-strategy role assignment is
+ *  on the roadmap — see the README.) */
 
 import type { Mode } from "../core/state.js";
 
-const AGENTS = [
+export interface AgentCfg {
+  id: string;
+  adapter: string;
+}
+
+/** Every agent Coterie can coordinate, in preference order. Roles that need a
+ *  specific seat (implementer/auditor, debate sides) and the finalizer take the
+ *  earliest available agents in this order. */
+export const KNOWN_AGENTS: AgentCfg[] = [
   { id: "claude-code", adapter: "claude-code" },
   { id: "codex", adapter: "codex" },
+  { id: "cursor", adapter: "cursor" },
 ];
 
-export function defaultConfig(mode: Mode): Record<string, any> {
+/** Baseline lineup when a caller doesn't pass one (keeps non-interactive
+ *  defaults and unit tests stable). The chat REPL passes the live lineup. */
+const BASE_AGENTS: AgentCfg[] = KNOWN_AGENTS.slice(0, 2);
+
+export function defaultConfig(mode: Mode, agents: AgentCfg[] = BASE_AGENTS): Record<string, any> {
+  const ids = agents.map((a) => a.id);
+  const pair = agents.slice(0, 2);
+
   switch (mode) {
     case "single":
-      return { version: 1, mode, agents: AGENTS, router: { enabled: true, model: "claude-haiku-4-5" } };
+      return { version: 1, mode, agents, router: { enabled: true, model: "claude-haiku-4-5" } };
     case "adversarial":
       return {
         version: 1,
         mode,
-        agents: AGENTS,
+        agents: pair,
         adversarial: {
-          implementer: "claude-code",
-          auditor: "codex",
+          implementer: ids[0],
+          auditor: ids[1],
           judge: { model: "claude-opus-4-7", sustain_threshold: "medium" },
           max_rounds: 2,
         },
@@ -29,16 +47,16 @@ export function defaultConfig(mode: Mode): Record<string, any> {
       return {
         version: 1,
         mode,
-        agents: AGENTS,
-        consensus: { participants: ["claude-code", "codex"], engine: { model: "claude-haiku-4-5" }, threshold: 0.66 },
+        agents,
+        consensus: { participants: ids, engine: { model: "claude-haiku-4-5" }, threshold: 0.66 },
       };
     case "debate":
       return {
         version: 1,
         mode,
-        agents: AGENTS,
+        agents: pair,
         debate: {
-          sides: ["claude-code", "codex"],
+          sides: [ids[0], ids[1]],
           rounds: 2,
           moderator: { model: "claude-haiku-4-5" },
           judge: { model: "claude-opus-4-7" },
@@ -48,8 +66,8 @@ export function defaultConfig(mode: Mode): Record<string, any> {
       return {
         version: 1,
         mode,
-        agents: AGENTS,
-        tournament: { participants: ["claude-code", "codex"], judge: { model: "claude-opus-4-7" }, rounds: 1 },
+        agents,
+        tournament: { participants: ids, judge: { model: "claude-opus-4-7" }, rounds: 1 },
       };
   }
 }
