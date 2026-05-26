@@ -91,3 +91,32 @@ All six gaps from the original v0.1 design have been filled:
 6. ~~Single-round tournament~~ — `tournament.rounds: N` enables bracket elimination via state-driven loops.
 
 Remaining work all lives in v0.2 (see section 6): production-grade Docker isolation, full TUI, observability backends, true parallel multi-round.
+
+## 9. API worker model & backpressure
+
+`coterie-api` drives each run's graph on a `ThreadPoolExecutor` (size set by
+`COTERIE_WORKER_CONCURRENCY`, default 4). Threads — not a process pool — are the
+right tool here for two reasons:
+
+- The orchestration thread streams events back to the request's SSE subscribers
+  via `run_coroutine_threadsafe` onto the **same process's event loop**, and
+  holds a live reference to the compiled LangGraph + checkpointer. None of that
+  is picklable, so a `ProcessPoolExecutor` would require an IPC/event redesign
+  for no real gain.
+- The heavy, untrusted work — the agent CLIs — is **already** isolated
+  out-of-process by the `AdapterExecutor` implementations (`LocalSubprocess`,
+  `IsolatedWorktree`, `DockerSwarm`). The orchestration thread mostly waits on
+  those subprocesses. CPU isolation belongs at that layer, not here.
+
+**Admission control.** The pool's internal queue is unbounded, so a burst of
+`POST /api/runs` would otherwise accept arbitrarily many runs and starve the
+ones already executing. The runner tracks an in-flight set (accepted but not
+terminal, including paused HIL runs) and sheds load with a `503` + `Retry-After`
+once it reaches `COTERIE_MAX_INFLIGHT_RUNS` (default: 2× the worker count).
+
+**Multi-node future tier.** Single-process threads cap throughput at one box.
+The path to horizontal scale is a real broker-backed worker tier (RQ or Celery
+on Redis): the API enqueues a job and returns immediately; a pool of worker
+processes — each running the same graph code — consumes the queue, and run
+events flow back through the store + a pub/sub fan-out instead of an in-process
+loop. That's a deliberate v0.2+ step, not a drop-in swap.

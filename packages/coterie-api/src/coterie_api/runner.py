@@ -31,6 +31,7 @@ from typing import Any
 from coterie.core.executor import IsolatedWorktreeExecutor, LocalSubprocessExecutor
 from coterie.graph import build_graph
 from coterie.observability import current_trace_id, span_for_run
+from fastapi import HTTPException
 
 from coterie_api.models import Mode
 from coterie_api.store import Store
@@ -49,15 +50,41 @@ def _make_checkpointer():
     return SqliteSaver(conn)
 
 
+def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
 class Runner:
     def __init__(self, store: Store) -> None:
         self.store = store
-        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="coterie-run")
+        # Worker concurrency drives the orchestration layer (each thread invokes
+        # one graph). The heavy, untrusted work — the agent CLIs themselves — is
+        # already isolated out-of-process by the executors (LocalSubprocess /
+        # IsolatedWorktree / DockerSwarm), so threads here are the right tool.
+        self._concurrency = _env_int("COTERIE_WORKER_CONCURRENCY", 4)
+        # Admission control: cap accepted-but-not-terminal runs so a burst can't
+        # pile up unbounded behind the pool. Defaults to 2x the worker count
+        # (roughly: as many running as queued) before we shed load with a 503.
+        self._max_inflight = _env_int("COTERIE_MAX_INFLIGHT_RUNS", self._concurrency * 2)
+        self._inflight_runs: set[str] = set()
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._concurrency, thread_name_prefix="coterie-run"
+        )
         self._subscribers: dict[str, list[asyncio.Queue[dict[str, Any] | None]]] = {}
         self._handles: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         # Process-wide checkpointer so paused runs survive process restarts.
         self._checkpointer = _make_checkpointer()
+
+    def _finish(self, run_id: str) -> None:
+        """Terminal cleanup: drop the in-memory handle and free the in-flight
+        slot so a waiting request can be admitted. Idempotent."""
+        handles = self._handles
+        handles.pop(run_id, None)
+        self._inflight_runs.discard(run_id)
 
     # ---------- public API ----------
 
@@ -69,6 +96,9 @@ class Runner:
         for run in self.store.runs_in_status("awaiting_human"):
             try:
                 self._rebuild_handle(run)
+                # A paused run holds a handle + checkpoint state, so it counts
+                # against capacity until it's resumed to a terminal state.
+                self._inflight_runs.add(run["id"])
                 restored += 1
             except Exception as e:  # noqa: BLE001
                 print(f"coterie-api: failed to restore run {run['id']}: {e}")
@@ -107,9 +137,22 @@ class Runner:
         config: dict[str, Any],
         owner_id: str | None = None,
     ) -> str:
+        # Shed load before accepting work we can't make progress on. The pool's
+        # internal queue is unbounded, so without this a burst would accept
+        # arbitrarily many runs and starve everyone.
+        if len(self._inflight_runs) >= self._max_inflight:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"server at capacity ({self._max_inflight} runs in flight); "
+                    "retry shortly"
+                ),
+                headers={"Retry-After": "5"},
+            )
         run_id = uuid.uuid4().hex[:12]
         config = {**config, "mode": mode}
         self.store.insert_run(run_id, task, mode, config, owner_id=owner_id)
+        self._inflight_runs.add(run_id)
         self._subscribers[run_id] = []
         asyncio.create_task(self._run(run_id, task, config))
         return run_id
@@ -126,7 +169,7 @@ class Runner:
             await self._emit(run_id, "status_change", {"status": "rejected"})
             await self._emit(run_id, "done", {"status": "rejected"})
             await self._close_subscribers(run_id)
-            self._handles.pop(run_id, None)
+            self._finish(run_id)
             return True
 
         self.store.update_run_status(run_id, "running", status_reason=None)
@@ -257,7 +300,7 @@ class Runner:
             await self._emit(run_id, "error", {"message": str(e), "traceback": traceback.format_exc()})
             await self._emit(run_id, "done", {"status": "failed"})
             await self._close_subscribers(run_id)
-            self._handles.pop(run_id, None)
+            self._finish(run_id)
 
     async def _resume(self, run_id: str, handle: dict[str, Any]) -> None:
         loop = asyncio.get_running_loop()
@@ -281,7 +324,7 @@ class Runner:
             await self._emit(run_id, "error", {"message": str(e), "traceback": traceback.format_exc()})
             await self._emit(run_id, "done", {"status": "failed"})
             await self._close_subscribers(run_id)
-            self._handles.pop(run_id, None)
+            self._finish(run_id)
 
     async def _finalize_or_pause(
         self,
@@ -334,7 +377,7 @@ class Runner:
 
         await self._emit(run_id, "done", {"status": status, "duration_s": duration})
         await self._close_subscribers(run_id)
-        self._handles.pop(run_id, None)
+        self._finish(run_id)
         with contextlib.suppress(Exception):
             self.store.compact_events(run_id)
 
