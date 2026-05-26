@@ -5,7 +5,7 @@
 > agents, and the same task now run under a completely different coordination
 > pattern. One config flag.
 
-[![CI](https://github.com/cxk280/coterie/actions/workflows/ci.yml/badge.svg)](https://github.com/cxk280/coterie/actions/workflows/ci.yml)
+[![CI](https://dl.circleci.com/status-badge/img/gh/cxk280/coterie/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/cxk280/coterie/tree/main)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/badge/pypi-coterie-3776AB.svg)](https://pypi.org/project/coterie/)
 [![npm](https://img.shields.io/badge/npm-coterie-CB3837.svg)](https://www.npmjs.com/package/coterie)
