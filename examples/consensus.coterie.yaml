@@ -13,10 +13,10 @@ agents:
     adapter: claude-code
   - id: codex
     adapter: codex
-  - id: aider
-    adapter: aider
+  - id: cursor
+    adapter: cursor
 consensus:
-  participants: [claude, codex, aider]
+  participants: [claude, codex, cursor]
   engine:
     model: claude-opus-4-7
     confirm_threshold: 0.5   # 2 of 3 supporters → confirmed

@@ -2,11 +2,10 @@
   "name": "coterie-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Monorepo root for Coterie — a LangGraph orchestrator for heterogeneous coding agents.",
+  "description": "Repo root for Coterie — a conversational multi-agent coding CLI. The package lives in packages/coterie-js.",
   "license": "MIT",
   "workspaces": [
-    "packages/coterie-js",
-    "packages/coterie-web"
+    "packages/coterie-js"
   ],
   "scripts": {
     "build": "npm run -ws build",
