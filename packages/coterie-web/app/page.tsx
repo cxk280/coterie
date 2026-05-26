@@ -2,6 +2,8 @@ import { RunForm } from "@/components/dashboard/RunForm";
 import { LeftRail } from "@/components/dashboard/LeftRail";
 import { Header } from "@/components/ui/Header";
 
+export const dynamic = "force-dynamic";
+
 export default function DashboardPage() {
   return (
     <div className="flex h-screen flex-col">
