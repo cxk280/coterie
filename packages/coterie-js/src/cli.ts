@@ -65,7 +65,7 @@ async function main() {
     .description("Conversational REPL: each turn runs through a coordination mode behind the scenes.")
     .option("--mode <mode>", "Coordination mode (single|consensus|adversarial|debate|tournament)", "adversarial")
     .option("--workdir <path>", "Directory the agents read/edit", ".")
-    .option("--quiet", "Start with the live round trace hidden", false)
+    .option("--quiet", "Start with the live agent exchanges hidden (show only the final reply)", false)
     .action(async (opts: { mode: string; workdir: string; quiet: boolean }) => {
       const { runChat } = await import("./chat/repl.js");
       const valid = ["single", "consensus", "adversarial", "debate", "tournament"];
