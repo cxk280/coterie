@@ -30,6 +30,8 @@ export interface FinalizerOpts {
   task: string;
   digest: string;
   workdir: string;
+  /** Adapter to run as the finalizer (defaults to the first available agent). */
+  adapter?: string;
   model?: string;
   agentId?: string;
   executor?: AdapterExecutor;
@@ -37,7 +39,7 @@ export interface FinalizerOpts {
 
 /** Run the finalizer agent and return its prose answer plus the raw run record. */
 export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: string; run: AgentRun }> {
-  const ctor = ADAPTER_REGISTRY.require("claude-code");
+  const ctor = ADAPTER_REGISTRY.require(opts.adapter ?? "claude-code");
   const adapter = new ctor(opts.agentId ?? "finalizer", { model: opts.model });
   const executor = opts.executor ?? new LocalSubprocessExecutor();
   const prompt = buildFinalizerPrompt(opts.task, opts.digest);

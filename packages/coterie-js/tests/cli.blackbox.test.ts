@@ -37,16 +37,24 @@ function sandboxEnv(present: string[]): NodeJS.ProcessEnv {
   });
   for (const name of present) {
     const stub = join(bin, name);
-    writeFileSync(stub, `#!/bin/sh\necho "${name} 1.0.0"\nexit 0\n`);
+    // cursor-agent's auth is probed via `cursor-agent status --format json`, so
+    // its stub answers that; the others just report a version. Each CLI also
+    // gets the credential fixture its auth probe looks for. Extend when adding
+    // a new agent.
+    if (name === "cursor-agent") {
+      writeFileSync(
+        stub,
+        `#!/bin/sh\nif [ "$1" = "status" ]; then echo '{"isAuthenticated":true}'; exit 0; fi\necho "${name} 1.0.0"\nexit 0\n`,
+      );
+    } else {
+      writeFileSync(stub, `#!/bin/sh\necho "${name} 1.0.0"\nexit 0\n`);
+    }
     chmodSync(stub, 0o755);
-    // Drop the credential file each CLI's auth probe looks for, so a "present"
-    // agent also reads as signed in. Extend this when adding a new agent.
     if (name === "claude") writeFileSync(join(home, ".claude.json"), "{}");
     if (name === "codex") {
       mkdirSync(join(home, ".codex"), { recursive: true });
       writeFileSync(join(home, ".codex", "auth.json"), "{}");
     }
-    if (name === "cursor-agent") mkdirSync(join(home, ".cursor"), { recursive: true });
   }
   return { PATH: bin, HOME: home };
 }

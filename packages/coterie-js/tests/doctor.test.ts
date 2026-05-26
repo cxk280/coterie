@@ -9,17 +9,24 @@ import { formatDoctor, runDoctor } from "../src/chat/doctor.js";
 
 const CLIS = ["claude", "codex", "cursor-agent"];
 
+// cursor's auth is probed via `cursor-agent status --format json`, not a file.
+let cursorAuthed = true;
+
 describe("runDoctor — needs at least two agents", () => {
   beforeEach(() => {
     spawnSync.mockReset();
     existsSync.mockReset();
-    existsSync.mockReturnValue(true); // installed CLIs read as signed in
+    existsSync.mockReturnValue(true); // claude/codex read as signed in (file check)
+    cursorAuthed = true;
   });
 
   function installed(...clis: string[]): void {
-    spawnSync.mockImplementation((cmd: string) =>
-      clis.includes(cmd) ? { status: 0 } : { status: 1, error: new Error("ENOENT") },
-    );
+    spawnSync.mockImplementation((cmd: string, args?: string[]) => {
+      if (!clis.includes(cmd)) return { status: 1, error: new Error("ENOENT") };
+      if (cmd === "cursor-agent" && args?.[0] === "status")
+        return { status: 0, stdout: JSON.stringify({ isAuthenticated: cursorAuthed }) };
+      return { status: 0 };
+    });
   }
 
   it("not ok with zero agents", () => {
@@ -56,7 +63,8 @@ describe("runDoctor — needs at least two agents", () => {
 
   it("installed-but-unauthenticated agents do not count toward the two", () => {
     installed("claude", "codex", "cursor-agent"); // all installed…
-    existsSync.mockReturnValue(false); // …but no credentials found anywhere
+    existsSync.mockReturnValue(false); // …but claude/codex have no creds…
+    cursorAuthed = false; // …and cursor reports not signed in
     const r = runDoctor(CLIS);
     expect(r.ready).toBe(0);
     expect(r.ok).toBe(false);

@@ -10,9 +10,10 @@ import type { LLMClient } from "../core/llm/base.js";
 import { buildLLM } from "../core/llm/build.js";
 import type { Mode } from "../core/state.js";
 import { buildGraph } from "../graph.js";
-import { defaultConfig } from "./configs.js";
+import { type AgentCfg, defaultConfig } from "./configs.js";
+import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
-import { formatProblems, preflight } from "./preflight.js";
+import { availableAgents } from "./preflight.js";
 import { digestRound } from "./render.js";
 import { Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
@@ -47,9 +48,11 @@ the reply — so file edits land in every mode. The mode shapes the deliberation
 export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolean }): Promise<void> {
   let mode = opts.mode;
 
-  const problems = preflight(defaultConfig(mode));
-  if (problems.length) {
-    console.error(kleur.yellow(formatProblems(problems)));
+  // Build the session lineup from whichever agents are actually available; need
+  // at least two to coordinate. Roles within each mode are auto-assigned from it.
+  const agents = availableAgents();
+  if (agents.length < MIN_AGENTS) {
+    console.error(kleur.yellow(formatDoctor(runDoctor())));
     process.exitCode = 1;
     return;
   }
@@ -60,7 +63,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   console.log(kleur.cyan().bold("▲ coterie chat"));
   console.log(
     kleur.dim(
-      `  mode=${mode} · workdir=${opts.workdir} · subscription (claude -p, $0 metered)\n` +
+      `  mode=${mode} · workdir=${opts.workdir} · agents: ${agents.map((a) => a.id).join(", ")} · $0 metered\n` +
         "  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.",
     ),
   );
@@ -88,7 +91,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
         } else console.log(kleur.red(`  unknown command '/${cmd}' — /help`));
       } else {
-        await runTurn(text, mode, opts.workdir, transcript, trace);
+        await runTurn(text, mode, opts.workdir, agents, transcript, trace);
       }
     } catch (e) {
       console.error(kleur.red(`  error: ${e instanceof Error ? e.message : String(e)}`));
@@ -104,10 +107,11 @@ async function runTurn(
   text: string,
   mode: Mode,
   workdir: string,
+  agents: AgentCfg[],
   transcript: Transcript,
   trace: Trace,
 ): Promise<void> {
-  const cfg = defaultConfig(mode);
+  const cfg = defaultConfig(mode, agents);
   const llms = await buildLlms(mode, cfg);
   // Deliberation never touches the real workdir — it runs in throwaway worktrees
   // and feeds the finalizer as advice. The finalizer is the sole mutator.
@@ -140,8 +144,17 @@ async function runTurn(
   }
 
   if (trace.visible) console.log(kleur.dim("  ↻ finalizing — applying edits + composing reply…"));
-  const judgeModel: string | undefined = cfg[mode]?.judge?.model ?? cfg.consensus?.engine?.model;
-  const { answer, run } = await runFinalizer({ task, digest: digestRound(final), workdir, model: judgeModel });
+  // The finalizer (the judge seat) is the first available agent. Only pass a
+  // model when it's Claude Code — the judge-model aliases are Claude-specific.
+  const finalizerAdapter = agents[0]!.adapter;
+  const finalizerModel = finalizerAdapter === "claude-code" ? "claude-opus-4-7" : undefined;
+  const { answer, run } = await runFinalizer({
+    task,
+    digest: digestRound(final),
+    workdir,
+    adapter: finalizerAdapter,
+    model: finalizerModel,
+  });
   trace.finalizer(run);
 
   const reply = answer || "(the finalizer produced no reply — check the workdir for edits)";

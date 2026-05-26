@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { ADAPTER_CLI } from "./configs.js";
+import { ADAPTER_CLI, KNOWN_AGENTS, type AgentCfg } from "./configs.js";
 
 export interface PreflightProblem {
   agent: string;
@@ -52,8 +52,16 @@ function looksAuthed(cli: string): boolean {
     return existsSync(join(dir, "auth.json"));
   }
   if (cli === "cursor-agent") {
-    const cfg = process.env.XDG_CONFIG_HOME || join(home, ".config");
-    return existsSync(join(home, ".cursor")) || existsSync(join(cfg, "cursor-agent"));
+    // ~/.cursor exists for anyone who's used the Cursor editor, so it's not an
+    // auth signal. Ask cursor-agent itself — `status` reports auth without
+    // running an agent (no cost), and exposes a clean JSON flag.
+    const probe = spawnSync(cli, ["status", "--format", "json"], { encoding: "utf8", timeout: 15_000 });
+    if (probe.error) return false;
+    try {
+      return JSON.parse(probe.stdout || "{}").isAuthenticated === true;
+    } catch {
+      return !/not logged in/i.test(probe.stdout || "");
+    }
   }
   return true;
 }
@@ -76,6 +84,15 @@ export function checkAgent(cli: string): AgentStatus {
   if (!isInstalled(cli)) return { cli, ok: false, reason: "not installed", fix: `Install: ${rem.install}` };
   if (!looksAuthed(cli)) return { cli, ok: false, reason: "not signed in", fix: `Log in: ${rem.login}` };
   return { cli, ok: true, reason: "ready" };
+}
+
+/** The agents that are installed and signed in right now, in preference order —
+ *  the lineup `coterie chat` coordinates and assigns roles from. */
+export function availableAgents(): AgentCfg[] {
+  return KNOWN_AGENTS.filter((a) => {
+    const cli = ADAPTER_CLI[a.adapter];
+    return cli ? checkAgent(cli).ok : false;
+  });
 }
 
 /** Check every agent CLI referenced by the config. Returns problems (empty = OK). */
