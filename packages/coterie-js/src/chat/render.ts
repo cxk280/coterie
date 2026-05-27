@@ -29,10 +29,15 @@ function capLines(text: string, maxChars: number): string {
   return t.slice(0, maxChars).trimEnd() + " …";
 }
 
-/** Did this agent run fail? A non-zero exit, or no output at all with something
- *  on stderr (e.g. an auth error or crash the CLI reported but didn't exit on). */
+/** Did this agent run fail? A non-zero exit always counts. An exit-0 run with no
+ *  stdout but error-looking stderr (auth/rate-limit/crash the CLI reported but
+ *  didn't exit on) counts too — but a benign warning on stderr with no stdout
+ *  (e.g. a deprecation notice from an agent that only edited files) does not. */
+const STDERR_ERROR_RE = /error|fail|denied|unauthor|not logged in|rate.?limit|expired|invalid|quota|ENOENT|timed? ?out/i;
 export function runFailed(run: AgentRun): boolean {
-  return run.exit_code !== 0 || (!run.stdout.trim() && !!run.stderr.trim());
+  if (run.exit_code !== 0) return true;
+  if (!run.stdout.trim() && run.stderr.trim()) return STDERR_ERROR_RE.test(run.stderr);
+  return false;
 }
 
 /** A one-line, human-readable description of a failed run. */
@@ -73,14 +78,23 @@ export function digestRound(final: CoterieState): string {
 
   const consensus = (final.mode_state?.consensus_findings ?? []) as any[];
   if (consensus.length) {
-    const lines = consensus.map(
-      (c) =>
-        `- [${c.label}] [${c.severity}] ${c.description} (${c.agreement_count}/${
-          c.supporting_agents?.length ?? c.agreement_count
-        } agree)`,
-    );
+    const lines = consensus.map((c) => {
+      // Denominator is the participant total, not the supporter count (which
+      // would always read "N/N"). Fall back to deriving it from the ratio.
+      const total =
+        c.participant_count ??
+        (c.agreement_ratio ? Math.round(c.agreement_count / c.agreement_ratio) : c.agreement_count);
+      return `- [${c.label}] [${c.severity}] ${c.description} (${c.agreement_count}/${total} agree)`;
+    });
     parts.push(`### consensus findings\n${lines.join("\n")}`);
   }
 
-  return parts.join("\n\n") || "(the deliberation produced no output)";
+  // Cap the assembled digest so a many-run round can't hand the finalizer an
+  // unbounded prompt (compounds the argv limit). Per-contribution caps above
+  // bound each piece; this bounds the whole.
+  const digest = parts.join("\n\n") || "(the deliberation produced no output)";
+  const MAX_DIGEST = 12_000;
+  return digest.length > MAX_DIGEST
+    ? digest.slice(0, MAX_DIGEST) + "\n\n…(deliberation digest truncated)…"
+    : digest;
 }

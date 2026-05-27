@@ -1,3 +1,4 @@
+import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 
@@ -42,18 +43,16 @@ Return strict JSON only — no prose, no markdown:
 const SEVERITY_RANK: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 
 export function parseFindings(stdout: string): any[] {
-  let cleaned = stdout.trim();
-  if (cleaned.startsWith("```")) {
-    const lines = cleaned.split("\n");
-    const last = lines[lines.length - 1];
-    cleaned = (last && last.startsWith("```") ? lines.slice(1, -1) : lines.slice(1)).join("\n");
-  }
-  try {
-    const data = JSON.parse(cleaned);
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
+  const data = parseJsonLoose(stdout);
+  return Array.isArray(data) ? data : [];
+}
+
+/** Whether the auditor output actually yielded a JSON array of findings — as
+ *  opposed to prose, a crash, or malformed JSON. Lets the judge distinguish a
+ *  genuine "no defects" ([]) from "couldn't read the auditor", which must not be
+ *  silently treated as a clean bill of health. */
+export function findingsAreParseable(stdout: string): boolean {
+  return Array.isArray(parseJsonLoose(stdout));
 }
 
 export function makeAdversarialJudgeNode(llm: LLMClient | null) {
@@ -78,12 +77,18 @@ export function makeAdversarialJudgeNode(llm: LLMClient | null) {
     if (eligibleIndices.length === 0) {
       modeState.sustained_findings = [];
       modeState.verdict = "accept";
+      // If the auditor's output couldn't be parsed (crash / prose / bad JSON),
+      // "no eligible findings" doesn't mean "clean" — say so rather than implying
+      // a pass. (We still terminate; the failure is surfaced in the trace.)
+      const unparsed = modeState.auditor_unparsed === true;
       return {
         mode_state: modeState,
         judge_history: [{
           step: state.current_step_idx ?? 0,
           winner: "implementer",
-          reason: "no findings met severity threshold",
+          reason: unparsed
+            ? "auditor produced no parseable findings — accepting, but the audit may be incomplete"
+            : "no findings met severity threshold",
           scores: { sustained_count: 0 },
         }],
         status: "done" as const,
@@ -107,12 +112,12 @@ export function makeAdversarialJudgeNode(llm: LLMClient | null) {
         `Eligible findings (severity >= ${threshold}):\n${findingsBlock}\n\n` +
         `Round: ${roundIdx + 1} of ${maxRounds}`;
       const raw = await llm.chat(JUDGE_SYSTEM, [{ role: "user", content: prompt }]);
-      try {
-        const decision = JSON.parse(raw);
+      const decision = parseJsonLoose(raw);
+      if (decision && typeof decision === "object") {
         sustained = (decision.sustained ?? []).map((i: number) => findings[i]).filter(Boolean);
         verdict = decision.verdict ?? "revise";
         reason = decision.reason ?? "";
-      } catch {
+      } else {
         sustained = eligibleIndices.map((i) => findings[i]);
         verdict = "revise";
         reason = `judge LLM output unparseable: ${raw.slice(0, 120)}`;
@@ -124,13 +129,17 @@ export function makeAdversarialJudgeNode(llm: LLMClient | null) {
     modeState.round_idx = roundIdx + 1;
     const outOfRounds = modeState.round_idx >= maxRounds;
     const finished = verdict === "accept" || outOfRounds || sustained.length === 0;
+    // Surface the honest outcome: hitting the round cap with sustained defects
+    // still outstanding is "done with unresolved issues", not a clean accept.
+    const unresolved = finished && verdict !== "accept" && sustained.length > 0;
+    modeState.unresolved_findings = unresolved ? sustained.length : 0;
 
     return {
       mode_state: modeState,
       judge_history: [{
         step: state.current_step_idx ?? 0,
         winner: verdict === "accept" ? "implementer" : "auditor",
-        reason,
+        reason: unresolved ? `${reason} (round cap reached with ${sustained.length} unresolved)` : reason,
         scores: { sustained_count: sustained.length },
       }],
       status: finished ? ("done" as const) : ("executing" as const),
@@ -150,9 +159,13 @@ export function adversarialImplementerPrompt(state: CoterieState): string {
 export function adversarialAuditorPrompt(state: CoterieState): string {
   const ms = state.mode_state ?? {};
   const implOutput = (ms.implementer_output ?? "") as string;
-  return AUDITOR_PROMPT_TEMPLATE
-    .replace("{subtask}", state.task)
-    .replace("{implementer_output}", implOutput.slice(0, 4000));
+  // Single-pass substitution so a user task containing the literal
+  // "{implementer_output}" can't collide with the second placeholder.
+  const subs: Record<string, string> = {
+    "{subtask}": state.task,
+    "{implementer_output}": implOutput.slice(0, 4000),
+  };
+  return AUDITOR_PROMPT_TEMPLATE.replace(/\{subtask\}|\{implementer_output\}/g, (m) => subs[m] ?? m);
 }
 
 export function makeRecordImplementerOutputNode() {
@@ -170,7 +183,13 @@ export function makeRecordAuditorFindingsNode() {
     const runs = state.runs ?? [];
     const lastAuditor = [...runs].reverse().find((r) => r.role === "auditor");
     const modeState = { ...(state.mode_state ?? {}) };
-    if (lastAuditor) modeState.auditor_findings = parseFindings(lastAuditor.stdout);
+    if (lastAuditor) {
+      modeState.auditor_findings = parseFindings(lastAuditor.stdout);
+      // Distinguish a real "[]" (clean) from a crash / prose / bad JSON, so the
+      // judge doesn't read a broken audit as a pass.
+      modeState.auditor_unparsed =
+        lastAuditor.exit_code !== 0 || !findingsAreParseable(lastAuditor.stdout);
+    }
     return { mode_state: modeState, status: "judging" as const };
   };
 }

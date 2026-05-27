@@ -1,3 +1,4 @@
+import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 
@@ -38,11 +39,7 @@ export function makeModeratorNode(llm: LLMClient | null) {
         `Question: ${state.task}\n\nPro argument:\n${proRun.stdout.slice(0, 1500)}\n\n` +
         `Con argument:\n${conRun.stdout.slice(0, 1500)}`;
       const raw = await llm.chat(MODERATOR_SYSTEM, [{ role: "user", content: prompt }]);
-      try {
-        summary = JSON.parse(raw);
-      } catch {
-        summary = { round_summary: raw.slice(0, 300), unresolved: "", fact_check_needed: [] };
-      }
+      summary = parseJsonLoose(raw) ?? { round_summary: raw.slice(0, 300), unresolved: "", fact_check_needed: [] };
     }
 
     modeState.rounds_completed = (modeState.rounds_completed ?? 0) + 1;
@@ -54,17 +51,18 @@ export function makeModeratorNode(llm: LLMClient | null) {
 export function makeDebateJudgeNode(llm: LLMClient | null) {
   return async (state: CoterieState) => {
     const cfg = state.config;
-    const sides = cfg.debate.sides as [string, string];
+    const sides = (cfg.debate?.sides ?? []) as [string, string];
     const runs = state.runs ?? [];
     const proRuns = runs.filter((r) => r.role === "pro");
     const conRuns = runs.filter((r) => r.role === "con");
-    const transcript = proRuns
-      .slice(0, conRuns.length)
-      .map((p, i) => {
-        const con = conRuns[i];
-        return `Round ${i + 1}\nPRO: ${p.stdout.slice(0, 800)}\nCON: ${con ? con.stdout.slice(0, 800) : "(missing)"}`;
-      })
-      .join("\n\n");
+    // Pair by the longer side so a dropped/failed round on either side isn't
+    // silently omitted from the judged transcript.
+    const rounds = Math.max(proRuns.length, conRuns.length);
+    const transcript = Array.from({ length: rounds }, (_, i) => {
+      const pro = proRuns[i];
+      const con = conRuns[i];
+      return `Round ${i + 1}\nPRO: ${pro ? pro.stdout.slice(0, 800) : "(missing)"}\nCON: ${con ? con.stdout.slice(0, 800) : "(missing)"}`;
+    }).join("\n\n");
 
     let decision: any;
     if (!llm) {
@@ -73,11 +71,7 @@ export function makeDebateJudgeNode(llm: LLMClient | null) {
       const raw = await llm.chat(DEBATE_JUDGE_SYSTEM, [
         { role: "user", content: `Question: ${state.task}\n\n${transcript}` },
       ]);
-      try {
-        decision = JSON.parse(raw);
-      } catch {
-        decision = { winner: "tie", reason: `judge output unparseable: ${raw.slice(0, 120)}`, scores: {} };
-      }
+      decision = parseJsonLoose(raw) ?? { winner: "tie", reason: `judge output unparseable: ${raw.slice(0, 120)}`, scores: {} };
     }
 
     const winnerLabel = decision.winner ?? "tie";
