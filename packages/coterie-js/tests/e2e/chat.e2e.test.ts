@@ -52,7 +52,7 @@ function scratchRepo(): string {
   const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
   git("init", "-q");
   git("add", "-A");
-  git("-c", "user.email=e2e@coterie.dev", "-c", "user.name=coterie-e2e", "commit", "-qm", "init");
+  git("-c", "user.email=e2e@example.com", "-c", "user.name=coterie-e2e", "commit", "-qm", "init");
   return dir;
 }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://coterie.dev/schemas/coterie.config.schema.json",
+  "$id": "https://github.com/cxk280/coterie/blob/main/packages/coterie-js/schemas/coterie.config.schema.json",
   "title": "Coterie configuration",
   "description": "Single source of truth for Coterie runtime configuration. The Python and JS runtimes both validate against this schema.",
   "type": "object",
