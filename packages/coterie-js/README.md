@@ -94,9 +94,11 @@ mode, and you never get raw findings JSON back. The mode shapes the deliberation
 
 Everything runs on your existing logins — the agents on **Claude Max**, **ChatGPT**
 (Codex), and **Cursor Pro**, and the behind-the-scenes coordination (routing /
-judging / moderating) on your **Claude subscription** via `claude -p`. So a full
-turn is **$0 metered** — no setup, no flags. On startup `coterie chat` checks each
-required CLI is installed and signed in, and tells you exactly what to do if not.
+judging / moderating) on a coding agent's CLI too: it prefers Claude (`claude -p`)
+but **falls back to Codex or Cursor**, so coordination works even without Claude
+installed. So a full turn is **$0 metered** — no setup, no flags. On startup
+`coterie chat` checks each required CLI is installed and signed in, and tells you
+exactly what to do if not.
 
 > **No pay-as-you-go API backend (yet).** Coordination is subscription-only by
 > design, so a session can never run up a surprise metered bill. A pluggable API

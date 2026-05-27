@@ -190,10 +190,12 @@ many-agent modes use everyone. (Choosing roles by hand is on the roadmap.)
 3. **Heterogeneous CLI subprocesses as the agents** — Claude Code, Codex, Cursor;
    each keeps its own model, prompt scaffolding, and tool harness. Coterie decides
    who runs what under which coordination pattern. Adding a new CLI is one small adapter.
-4. **Subscription-only, by design** — coordination runs on your Claude
-   subscription via `claude -p`; there is intentionally **no pay-as-you-go API
-   backend** so a session can never run up a metered bill. A pluggable provider
-   could be added later for keyless environments — it's deliberately not wired in today.
+4. **Subscription-only, by design** — coordination (routing / judging / merging)
+   runs on a coding agent's CLI, preferring Claude (`claude -p`) but **falling
+   back to Codex or Cursor** so it works without Claude installed. There is
+   intentionally **no pay-as-you-go API backend**, so a session can never run up a
+   metered bill. A pluggable API provider could be added later — deliberately not
+   wired in today.
 
 > **Grok is deferred:** unlike Claude / Codex / Cursor it has no
 > subscription-backed headless coding CLI (only the pay-as-you-go xAI API), so it
