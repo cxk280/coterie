@@ -12,7 +12,8 @@
 
 ```
 ▲ coterie chat
-  mode=adversarial · workdir=. · subscription (claude -p, $0 metered)
+  mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
+  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)
@@ -49,10 +50,14 @@ Run **`coterie doctor`** any time to see which are installed and signed in:
 
 ```
 $ coterie doctor
+Coterie coordinates multiple agents, so it needs at least 2 of these installed and signed in (any combination — and it'll use more if you have them):
+
   ✓ claude        — ready
   ✓ codex         — ready
   ✗ cursor-agent  — not installed
-  2 of 3 ready — good to go.
+      Install: curl https://cursor.com/install -fsS | bash
+
+2 of 3 ready — good to go.
 ```
 
 **Coterie needs no config of its own for any of this.** It finds each CLI on your

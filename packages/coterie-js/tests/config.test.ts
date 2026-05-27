@@ -42,4 +42,10 @@ describe("loadConfig validates against the bundled schema", () => {
       /Invalid config/,
     );
   });
+
+  it("gives a friendly error (not raw ENOENT) for a missing config file", () => {
+    expect(() => loadConfig("/tmp/coterie-does-not-exist-12345.yaml")).toThrow(
+      /Config file not found: \/tmp\/coterie-does-not-exist-12345\.yaml/,
+    );
+  });
 });

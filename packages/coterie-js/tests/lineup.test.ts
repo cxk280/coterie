@@ -6,7 +6,7 @@ vi.mock("node:child_process", () => ({ spawnSync }));
 vi.mock("node:fs", () => ({ existsSync }));
 
 import { type AgentCfg, defaultConfig } from "../src/chat/configs.js";
-import { availableAgents } from "../src/chat/preflight.js";
+import { agentStatuses, availableAgents } from "../src/chat/preflight.js";
 
 const THREE: AgentCfg[] = [
   { id: "claude-code", adapter: "claude-code" },
@@ -88,5 +88,38 @@ describe("availableAgents — only installed + signed-in agents, in preference o
     existsSync.mockReturnValue(false); // claude/codex have no creds…
     cursorAuthed = false; // …and cursor reports not signed in
     expect(availableAgents()).toEqual([]);
+  });
+});
+
+describe("agentStatuses — distinguishes ready / not signed in / not installed", () => {
+  beforeEach(() => {
+    spawnSync.mockReset();
+    existsSync.mockReset();
+    existsSync.mockReturnValue(true);
+    cursorAuthed = true;
+  });
+
+  function present(...clis: string[]): void {
+    spawnSync.mockImplementation((cmd: string, args?: string[]) => {
+      if (!clis.includes(cmd)) return { status: 1, error: new Error("ENOENT") };
+      if (cmd === "cursor-agent" && args?.[0] === "status")
+        return { status: 0, stdout: JSON.stringify({ isAuthenticated: cursorAuthed }) };
+      return { status: 0 };
+    });
+  }
+
+  it("reports an installed-but-signed-out agent as 'not signed in' (so chat can name it)", () => {
+    present("claude", "codex", "cursor-agent");
+    cursorAuthed = false; // installed, but signed out
+    const byCli = Object.fromEntries(agentStatuses().map((s) => [s.status.cli, s.status.reason]));
+    expect(byCli["claude"]).toBe("ready");
+    expect(byCli["codex"]).toBe("ready");
+    expect(byCli["cursor-agent"]).toBe("not signed in");
+  });
+
+  it("reports an absent agent as 'not installed', not 'not signed in'", () => {
+    present("claude", "codex"); // cursor-agent missing entirely
+    const cursor = agentStatuses().find((s) => s.status.cli === "cursor-agent");
+    expect(cursor?.status.reason).toBe("not installed");
   });
 });

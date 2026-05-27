@@ -24,12 +24,17 @@ function buildExecutor(cfg: any): AdapterExecutor {
 
 async function main() {
   const program = new Command();
-  program.name("coterie").description("Multi-mode LangGraph orchestration for heterogeneous coding agents.").version("0.1.0");
+  program
+    .name("coterie")
+    .description("Chat with a team of AI coding agents that collaborate on each task — in your terminal.")
+    .version("0.1.0")
+    .showHelpAfterError("(run `coterie --help` to see the available commands)");
 
   program
     .command("run")
+    .description("Run one task through a coordination mode from a config file (for scripting/CI; for interactive use see `chat`).")
     .argument("<task>", "Task to run through the agent graph")
-    .requiredOption("--config <path>", "Path to a coterie.yaml config")
+    .requiredOption("--config <path>", "Path to a coterie.yaml config (see examples/ in the repo for templates)")
     .option("--workdir <path>", "Working directory", ".")
     .action(async (task: string, opts: { config: string; workdir: string }) => {
       const cfg = loadConfig(opts.config);
@@ -67,12 +72,12 @@ async function main() {
   program
     .command("chat")
     .description("Conversational REPL: each turn runs through a coordination mode behind the scenes.")
-    .option("--mode <mode>", "Coordination mode (single|consensus|adversarial|debate|tournament)", "adversarial")
+    .option("--mode <mode>", "Coordination mode (single|adversarial|debate|tournament|consensus)", "adversarial")
     .option("--workdir <path>", "Directory the agents read/edit", ".")
     .option("--quiet", "Start with the live agent exchanges hidden (show only the final reply)", false)
     .action(async (opts: { mode: string; workdir: string; quiet: boolean }) => {
       const { runChat } = await import("./chat/repl.js");
-      const valid = ["single", "consensus", "adversarial", "debate", "tournament"];
+      const valid = ["single", "adversarial", "debate", "tournament", "consensus"];
       if (!valid.includes(opts.mode)) {
         console.error(`unknown mode '${opts.mode}'; pick one of ${valid.join(", ")}`);
         process.exit(2);
@@ -89,6 +94,13 @@ async function main() {
       console.log(formatDoctor(result));
       process.exit(result.ok ? 0 : 1);
     });
+
+  // No subcommand: show help and exit cleanly (0). Printing help is a success,
+  // not an error — bare `coterie` shouldn't look like something went wrong.
+  if (process.argv.slice(2).length === 0) {
+    program.outputHelp();
+    return;
+  }
 
   await program.parseAsync(process.argv);
 }
