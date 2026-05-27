@@ -25,3 +25,19 @@ export function parseJsonLoose(raw: string): any {
     return undefined;
   }
 }
+
+/** Parse NDJSON (one JSON value per line) — the streaming format the agent CLIs
+ *  emit. Blank or unparseable lines are skipped. */
+export function parseNdjson(text: string): any[] {
+  const out: any[] = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      out.push(JSON.parse(t));
+    } catch {
+      // ignore non-JSON noise on a line
+    }
+  }
+  return out;
+}

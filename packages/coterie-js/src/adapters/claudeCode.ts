@@ -1,4 +1,6 @@
 import { CLIAdapter, type AdapterResult } from "./base.js";
+import { parseJsonLoose, parseNdjson } from "../core/json.js";
+import { toolHint } from "./stream.js";
 import { registerAdapter } from "../core/registry.js";
 
 export class ClaudeCodeAdapter extends CLIAdapter {
@@ -10,34 +12,54 @@ export class ClaudeCodeAdapter extends CLIAdapter {
 
   buildCommand(prompt: string, _workdir: string, extra: Record<string, unknown> = {}): string[] {
     // acceptEdits lets the agent apply file edits headlessly while still gating
-    // riskier tools — safe against an isolated workdir.
+    // riskier tools — safe against an isolated workdir. stream-json (which needs
+    // --verbose) emits one NDJSON event per step so we can show live progress.
     const permissionMode = (extra.permissionMode as string) ?? "acceptEdits";
-    const cmd = ["claude", "-p", prompt, "--output-format", "json", "--permission-mode", permissionMode];
+    const cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", permissionMode];
     if (this.model) cmd.push("--model", this.model);
     return cmd;
   }
 
+  /** Emit a note for each tool the agent invokes; skip thinking/text/bookkeeping
+   *  (the final answer is rendered when the run completes). */
+  override streamEvent(line: string): string | null {
+    const ev = parseJsonLoose(line);
+    if (ev?.type !== "assistant") return null;
+    for (const c of ev.message?.content ?? []) {
+      if (c?.type === "tool_use") return `→ ${c.name}${toolHint(c.input)}`;
+    }
+    return null;
+  }
+
   parseResult(stdout: string, stderr: string, exitCode: number): AdapterResult {
-    try {
-      const payload = JSON.parse(stdout) as { result?: string; total_cost_usd?: number };
+    // stdout is an NDJSON stream; the final `result` event carries the answer + cost.
+    const events = parseNdjson(stdout);
+    const result = events.find((e) => e?.type === "result");
+    if (result) {
+      const files = events
+        .flatMap((e) => (e?.type === "assistant" ? (e.message?.content ?? []) : []))
+        .filter((c: any) => c?.type === "tool_use" && /^(Edit|Write|NotebookEdit)$/.test(c.name))
+        .map((c: any) => c.input?.file_path)
+        .filter(Boolean);
       return {
-        stdout: payload.result ?? stdout,
+        stdout: result.result ?? stdout,
         stderr,
         exit_code: exitCode,
-        files_changed: [],
+        files_changed: [...new Set(files)] as string[],
         duration_s: 0,
-        cost_estimate_usd: payload.total_cost_usd ?? null,
-      };
-    } catch {
-      return {
-        stdout,
-        stderr,
-        exit_code: exitCode,
-        files_changed: [],
-        duration_s: 0,
-        cost_estimate_usd: null,
+        cost_estimate_usd: result.total_cost_usd ?? null,
       };
     }
+    // Fallback: not the expected stream (older CLI / plain JSON / prose).
+    const loose = parseJsonLoose(stdout);
+    return {
+      stdout: loose?.result ?? stdout,
+      stderr,
+      exit_code: exitCode,
+      files_changed: [],
+      duration_s: 0,
+      cost_estimate_usd: loose?.total_cost_usd ?? null,
+    };
   }
 }
 

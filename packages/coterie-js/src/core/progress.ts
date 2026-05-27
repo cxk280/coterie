@@ -17,12 +17,23 @@ export interface AgentDoneEvent {
   run: AgentRun;
 }
 
+/** A live activity line from inside an agent's run (a tool call, a command, a
+ *  file edit) — emitted as the agent streams, before it finishes. */
+export interface AgentStepEvent {
+  agent_id: string;
+  role: string;
+  text: string;
+}
+
 class ProgressBus extends EventEmitter {
   start(ev: AgentStartEvent): void {
     this.emit("start", ev);
   }
   done(ev: AgentDoneEvent): void {
     this.emit("done", ev);
+  }
+  step(ev: AgentStepEvent): void {
+    this.emit("step", ev);
   }
 }
 
