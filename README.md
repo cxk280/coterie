@@ -33,6 +33,38 @@ turn is **$0 metered**: no API keys, no pay-as-you-go.
 
 ---
 
+## How Coterie is different
+
+Most coding tools hand you **one** assistant. Coterie is a thin layer **on top of
+the coding-agent CLIs you already run** — it puts several of them on every prompt
+and gives you back a single answer.
+
+- **It orchestrates agents; it doesn't replace them.** Claude Code, Codex, and
+  Cursor keep their own models, prompts, and tools. Coterie just decides who does
+  what under which strategy — so you get *cross-model* scrutiny (different vendors
+  checking each other's work), not one model's opinion repeated.
+- **Every reply is the result of a round, not a first guess.** An implementer
+  writes, an auditor attacks, a judge decides — or agents debate, compete, or
+  reach consensus. The disagreement is the feature: it catches the mistake a lone
+  agent would have shipped.
+- **It's a finished terminal app, not a framework.** Agent frameworks (CrewAI,
+  AutoGen, or rolling your own on LangGraph) are libraries you write code against
+  and point at metered model APIs. Coterie is just `coterie chat` — install it and
+  it drives the agent CLIs already on your machine. No glue code, no orchestration
+  to build.
+- **$0 metered, by design.** It rides the subscriptions you already pay for
+  (Claude Max / ChatGPT / Cursor Pro), not pay-as-you-go tokens — so a full
+  multi-agent round costs nothing on top, and a session can't run up an API bill.
+- **Nothing to configure, nothing to lock into.** It finds each CLI on your
+  `PATH` and lets it use its own saved login — whatever already works in your
+  shell works here. No API keys, no config file of paths or credentials. Add or
+  drop an agent any time; more arrive as simple adapters.
+
+In short: if one agent is a single engineer, Coterie is a small review team that
+already lives in your terminal — built from the tools you've already got.
+
+---
+
 ## Requirements
 
 - **Node.js ≥ 20** and **git**.
