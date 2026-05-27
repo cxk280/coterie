@@ -8,14 +8,14 @@ import kleur from "kleur";
 
 import { gitRepoReady, IsolatedWorktreeExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
-import { buildLLM } from "../core/llm/build.js";
+import { type CoordinationCli, buildLLM, coordinationCliFor } from "../core/llm/build.js";
 import type { AgentRun, Mode } from "../core/state.js";
 import { validateRuntimeConfig } from "../core/validate.js";
 import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
 import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
-import { agentStatuses, checkAgent } from "./preflight.js";
+import { agentStatuses } from "./preflight.js";
 import { classifyFailure, digestRound } from "./render.js";
 import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
@@ -27,13 +27,13 @@ const MODES: Mode[] = ["single", "adversarial", "debate", "tournament", "consens
  *  user's time on the most reflexive action there is. */
 const QUIT_WORDS = new Set(["exit", "quit", "q", ":q"]);
 
-async function buildLlms(mode: Mode, cfg: any): Promise<Record<string, LLMClient | null>> {
+async function buildLlms(mode: Mode, cfg: any, cli: CoordinationCli): Promise<Record<string, LLMClient | null>> {
   return {
-    supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model) : null,
-    judge_llm: ["adversarial", "tournament", "debate"].includes(mode) ? await buildLLM(cfg[mode]?.judge?.model) : null,
-    consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model) : null,
-    moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model) : null,
-    planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model) : null,
+    supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model, cli) : null,
+    judge_llm: ["adversarial", "tournament", "debate"].includes(mode) ? await buildLLM(cfg[mode]?.judge?.model, cli) : null,
+    consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model, cli) : null,
+    moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model, cli) : null,
+    planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model, cli) : null,
   };
 }
 
@@ -105,18 +105,12 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
       ),
     );
   }
-  // Coordination (routing / judging / merging) runs on Claude (`claude -p`),
-  // regardless of the agent lineup. If it looks unavailable, warn — turns may
-  // fail — but don't block (the auth check is a heuristic; claude may still work).
-  const coord = checkAgent("claude");
-  if (!coord.ok) {
-    console.log(
-      kleur.yellow(
-        `  ⚠ coordination runs on Claude (\`claude -p\`), which looks ${coord.reason}. ` +
-          "Turns may fail until it's available. If \`claude\` works in your shell, ignore this. " +
-          "(Pluggable coordination providers are on the roadmap.)",
-      ),
-    );
+  // Coordination (routing / judging / merging) prefers Claude but falls back to
+  // codex/cursor, so it works without Claude. Note the coordinator if it's not
+  // Claude, so the choice is visible.
+  const coordCli = coordinationCliFor(agents.map((a) => a.id));
+  if (coordCli !== "claude") {
+    console.log(kleur.dim(`  coordination: ${coordCli} (Claude not detected — using an available agent)`));
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -227,7 +221,10 @@ async function runTurn(
 ): Promise<AgentRun[] | null> {
   const cfg = defaultConfig(mode, agents);
   validateRuntimeConfig(cfg);
-  const llms = await buildLlms(mode, cfg);
+  // Coordination runs on an available agent's CLI — prefer Claude, else fall back
+  // to codex/cursor so a turn works without Claude on the machine.
+  const coordCli = coordinationCliFor(agents.map((a) => a.id));
+  const llms = await buildLlms(mode, cfg, coordCli);
   // Deliberation never touches the real workdir — it runs in throwaway worktrees
   // and feeds the finalizer as advice. The finalizer is the sole mutator.
   const graph = buildGraph({ workdir, executor: new IsolatedWorktreeExecutor(), config: cfg, ...llms });

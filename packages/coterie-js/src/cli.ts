@@ -18,7 +18,7 @@ import { progress } from "./core/progress.js";
 import { validateRuntimeConfig } from "./core/validate.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
 import type { LLMClient } from "./core/llm/base.js";
-import { buildLLM } from "./core/llm/build.js";
+import { buildLLM, coordinationCliFor } from "./core/llm/build.js";
 import { buildGraph } from "./graph.js";
 
 import "./adapters/index.js";  // trigger adapter registration
@@ -66,15 +66,16 @@ async function main() {
 
       const mode = cfg.mode;
       const executor = buildExecutor(cfg);
+      const coordCli = coordinationCliFor((cfg.agents as any[]).map((a) => a.id));
 
       const llms: Record<string, LLMClient | null> = {
-        supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model) : null,
+        supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model, coordCli) : null,
         judge_llm: ["adversarial", "tournament", "debate"].includes(mode)
-          ? await buildLLM(cfg[mode]?.judge?.model)
+          ? await buildLLM(cfg[mode]?.judge?.model, coordCli)
           : null,
-        consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model) : null,
-        moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model) : null,
-        planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model) : null,
+        consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model, coordCli) : null,
+        moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model, coordCli) : null,
+        planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model, coordCli) : null,
       };
 
       const graph = buildGraph({ workdir: opts.workdir, executor, config: cfg, ...llms });
