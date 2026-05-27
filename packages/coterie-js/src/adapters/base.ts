@@ -1,6 +1,6 @@
 /** CLIAdapter contract. Mirrors Python's `adapters/base.py`. */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 export interface AdapterResult {
   stdout: string;
@@ -14,6 +14,14 @@ export interface AdapterResult {
 export interface CLIAdapterCtor {
   adapterName: string;
   new (agent_id: string, opts?: { model?: string }): CLIAdapter;
+}
+
+/** A DOMException-style abort error so callers can detect cancellation via
+ *  `err.name === "AbortError"` (matches what `fetch`/AbortSignal users expect). */
+export function abortError(): Error {
+  const e = new Error("The operation was aborted");
+  e.name = "AbortError";
+  return e;
 }
 
 export abstract class CLIAdapter {
@@ -55,29 +63,85 @@ export abstract class CLIAdapter {
     exitCode: number,
   ): AdapterResult;
 
-  run(
+  /** Run the agent CLI asynchronously. Async (vs the old `spawnSync`) is what
+   *  keeps Node's event loop free during a turn — so the chat trace can stream
+   *  live, SIGINT is handled, and fan-out agents run concurrently. Honors a
+   *  timeout and an optional AbortSignal (both kill the child). */
+  async run(
     prompt: string,
     workdir: string,
-    opts: { timeoutMs?: number; extra?: Record<string, unknown> } = {},
-  ): AdapterResult {
+    opts: { timeoutMs?: number; extra?: Record<string, unknown>; signal?: AbortSignal } = {},
+  ): Promise<AdapterResult> {
     const argv = this.buildCommand(prompt, workdir, opts.extra ?? {});
     const [cmd, ...args] = argv;
     if (!cmd) throw new Error(`Adapter ${this.agent_id} produced an empty command`);
     const t0 = Date.now();
-    const proc = spawnSync(cmd, args, {
-      cwd: workdir,
-      encoding: "utf8",
-      timeout: opts.timeoutMs ?? 600_000,
-      env: this.subprocessEnv(),
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    const result = this.parseResult(
-      proc.stdout ?? "",
-      proc.stderr ?? "",
-      proc.status ?? 1,
-    );
+    const { stdout, stderr, code } = await this.spawnCollect(cmd, args, workdir, opts);
+    const result = this.parseResult(stdout, stderr, code);
     result.duration_s = (Date.now() - t0) / 1000;
     return result;
+  }
+
+  private spawnCollect(
+    cmd: string,
+    args: string[],
+    workdir: string,
+    opts: { timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<{ stdout: string; stderr: string; code: number }> {
+    return new Promise((resolve, reject) => {
+      if (opts.signal?.aborted) return reject(abortError());
+
+      // stdin = /dev/null so the child gets an immediate EOF. Headless agent CLIs
+      // (notably `codex exec`) otherwise block forever waiting on stdin — async
+      // spawn leaves the stdin pipe open, unlike the old spawnSync which closed it.
+      const child = spawn(cmd, args, {
+        cwd: workdir,
+        env: this.subprocessEnv(),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      const cap = 32 * 1024 * 1024;
+      child.stdout?.on("data", (d) => {
+        if (stdout.length < cap) stdout += d.toString();
+      });
+      child.stderr?.on("data", (d) => {
+        if (stderr.length < cap) stderr += d.toString();
+      });
+
+      // Graceful kill: SIGTERM, then SIGKILL if it doesn't exit in time.
+      const hardKill = () => {
+        if (!child.killed) child.kill("SIGKILL");
+      };
+      const kill = () => {
+        child.kill("SIGTERM");
+        setTimeout(hardKill, 2_000).unref();
+      };
+
+      const timer = setTimeout(kill, opts.timeoutMs ?? 600_000);
+      timer.unref();
+
+      const onAbort = () => {
+        kill();
+        cleanup();
+        reject(abortError());
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        opts.signal?.removeEventListener("abort", onAbort);
+      };
+
+      child.on("error", (err) => {
+        cleanup();
+        reject(err);
+      });
+      child.on("close", (code) => {
+        cleanup();
+        resolve({ stdout, stderr, code: code ?? 1 });
+      });
+    });
   }
 
   protected gitChangedFiles(workdir: string): string[] {

@@ -11,8 +11,9 @@
  * subscription.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
+import { abortError } from "../../adapters/base.js";
 import type { LLMClient, LLMMessage } from "./base.js";
 
 const TOOLS_OFF = [
@@ -37,7 +38,7 @@ export class ClaudeCliClient implements LLMClient {
     public readonly timeoutMs: number = 120_000,
   ) {}
 
-  async chat(system: string, messages: LLMMessage[]): Promise<string> {
+  async chat(system: string, messages: LLMMessage[], signal?: AbortSignal): Promise<string> {
     // Coordination calls are single-shot; fold the turns into one prompt.
     const prompt = messages
       .map((m) => (m.role === "user" ? m.content : `[${m.role}]\n${m.content}`))
@@ -47,25 +48,26 @@ export class ClaudeCliClient implements LLMClient {
     delete env.ANTHROPIC_API_KEY;
     delete env.ANTHROPIC_AUTH_TOKEN;
 
-    const proc = spawnSync(
-      "claude",
-      [
-        "-p",
-        prompt,
-        "--system-prompt",
-        system,
-        "--disallowedTools",
-        TOOLS_OFF,
-        "--output-format",
-        "json",
-        "--model",
-        this.model,
-      ],
-      { encoding: "utf8", timeout: this.timeoutMs, env, maxBuffer: 32 * 1024 * 1024 },
-    );
-
-    if (proc.error) throw new Error(`claude CLI failed: ${proc.error.message}`);
-    const out = (proc.stdout ?? "").trim();
+    // Async spawn (not spawnSync) so the coordination call doesn't block the
+    // event loop — keeps the chat trace streaming and SIGINT responsive.
+    const out = (
+      await this.spawn(
+        [
+          "-p",
+          prompt,
+          "--system-prompt",
+          system,
+          "--disallowedTools",
+          TOOLS_OFF,
+          "--output-format",
+          "json",
+          "--model",
+          this.model,
+        ],
+        env,
+        signal,
+      )
+    ).trim();
 
     let payload: { result?: string; is_error?: boolean } | undefined;
     try {
@@ -77,5 +79,47 @@ export class ClaudeCliClient implements LLMClient {
       throw new Error(`claude CLI returned an error: ${payload.result ?? out}`);
     }
     return payload?.result ?? out;
+  }
+
+  private spawn(args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(abortError());
+      // stdin = /dev/null (immediate EOF) so `claude -p` never blocks on input.
+      const child = spawn("claude", args, { env, stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (d) => (stdout += d.toString()));
+      child.stderr?.on("data", (d) => (stderr += d.toString()));
+
+      const kill = () => {
+        child.kill("SIGTERM");
+        setTimeout(() => !child.killed && child.kill("SIGKILL"), 2_000).unref();
+      };
+      const timer = setTimeout(kill, this.timeoutMs);
+      timer.unref();
+      const onAbort = () => {
+        kill();
+        cleanup();
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      child.on("error", (err) => {
+        cleanup();
+        reject(new Error(`claude CLI failed: ${err.message}`));
+      });
+      child.on("close", (code) => {
+        cleanup();
+        if (code !== 0 && !stdout.trim()) {
+          reject(new Error(`claude CLI exited ${code}: ${stderr.trim().slice(0, 200)}`));
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
   }
 }

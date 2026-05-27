@@ -13,13 +13,18 @@ import { join } from "node:path";
 
 import type { AdapterResult, CLIAdapter } from "../adapters/base.js";
 
+export interface ExecuteOpts {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
 export interface AdapterExecutor {
   execute(
     adapter: CLIAdapter,
     prompt: string,
     workdir: string,
-    opts?: { timeoutMs?: number },
-  ): AdapterResult;
+    opts?: ExecuteOpts,
+  ): Promise<AdapterResult>;
 }
 
 export class LocalSubprocessExecutor implements AdapterExecutor {
@@ -27,22 +32,22 @@ export class LocalSubprocessExecutor implements AdapterExecutor {
     adapter: CLIAdapter,
     prompt: string,
     workdir: string,
-    opts: { timeoutMs?: number } = {},
-  ): AdapterResult {
+    opts: ExecuteOpts = {},
+  ): Promise<AdapterResult> {
     return adapter.run(prompt, workdir, opts);
   }
 }
 
 export class IsolatedWorktreeExecutor implements AdapterExecutor {
-  execute(
+  async execute(
     adapter: CLIAdapter,
     prompt: string,
     workdir: string,
-    opts: { timeoutMs?: number } = {},
-  ): AdapterResult {
+    opts: ExecuteOpts = {},
+  ): Promise<AdapterResult> {
     const isolated = this.makeIsolated(workdir);
     try {
-      return adapter.run(prompt, isolated, opts);
+      return await adapter.run(prompt, isolated, opts);
     } finally {
       this.cleanup(isolated, workdir);
     }

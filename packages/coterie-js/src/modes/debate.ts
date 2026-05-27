@@ -16,7 +16,7 @@ function priorSummaries(state: CoterieState): string {
 }
 
 function proPrompt(state: CoterieState): string {
-  const total = state.config.debate?.rounds ?? 3;
+  const total = state.config.debate?.rounds ?? 2;
   const round = (state.mode_state?.rounds_completed ?? 0) + 1;
   return `You are arguing the PRO position in a structured debate.
 
@@ -34,7 +34,7 @@ counterargument from the prior round (if any). Be concise: 4-8 sentences.`;
 }
 
 function conPrompt(state: CoterieState): string {
-  const total = state.config.debate?.rounds ?? 3;
+  const total = state.config.debate?.rounds ?? 2;
   const round = (state.mode_state?.rounds_completed ?? 0) + 1;
   const runs = state.runs ?? [];
   const lastPro = [...runs].reverse().find((r) => r.role === "pro");
@@ -75,7 +75,7 @@ export function build(opts: ModeBuildOpts) {
     .addConditionalEdges(
       "moderator",
       (state: any) => {
-        const done = (state.mode_state?.rounds_completed ?? 0) >= (state.config.debate?.rounds ?? 3);
+        const done = (state.mode_state?.rounds_completed ?? 0) >= (state.config.debate?.rounds ?? 2);
         return done ? "judge" : "pro";
       },
       { pro: "pro", judge: "judge" },

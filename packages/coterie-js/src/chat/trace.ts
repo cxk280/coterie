@@ -1,68 +1,122 @@
-/** Live trace of a coordination round, fed the full-state snapshots from
- *  `graph.stream(..., { streamMode: "values" })`. By default it logs each agent's
- *  actual contribution (the exchange), not just who ran; `visible=false` (via
- *  `--quiet` / `/hide`) silences it and you get only the final answer. */
+/** Live, elegant trace of a coordination round. Per-agent activity is driven by
+ *  the process-wide progress bus (`core/progress`): each agent emits `start` when
+ *  it begins and `done` when it finishes, so the back-and-forth streams live even
+ *  when a mode fans agents out concurrently (e.g. consensus). Judge verdicts come
+ *  from the graph's streamed state snapshots. Everything is shown by default;
+ *  `visible=false` (via `--quiet` / `/hide`) silences the commentary — but agent
+ *  *failures* surface regardless, since a silent failure is worse than a noisy one. */
 
 import kleur from "kleur";
 
+import { progress, type AgentDoneEvent, type AgentStartEvent } from "../core/progress.js";
 import type { AgentRun, JudgeDecision } from "../core/state.js";
 import { renderContribution, renderFailure, runFailed } from "./render.js";
 
-function indent(text: string, pad = "      "): string {
+type Colorize = (s: string) => string;
+
+interface RoleStyle {
+  glyph: string;
+  color: Colorize;
+  label: string;
+}
+
+/** A consistent glyph + color per role so the eye can follow who's speaking. */
+function roleStyle(role: string): RoleStyle {
+  switch (role) {
+    case "auditor":
+    case "con":
+      return { glyph: "◆", color: kleur.yellow, label: role };
+    case "judge":
+    case "moderator":
+      return { glyph: "⚖", color: kleur.magenta, label: role };
+    case "finalizer":
+      return { glyph: "✦", color: kleur.green, label: "finalizer" };
+    case "consensus-participant":
+      return { glyph: "◆", color: kleur.cyan, label: "participant" };
+    case "tournament-participant":
+      return { glyph: "◆", color: kleur.cyan, label: "contender" };
+    default: // implementer, pro, agent, single, …
+      return { glyph: "◆", color: kleur.cyan, label: role };
+  }
+}
+
+function meta(run: AgentRun): string {
+  const bits: string[] = [];
+  if (run.duration_s) bits.push(`${run.duration_s.toFixed(1)}s`);
+  if (run.cost_estimate_usd != null) bits.push(`$${run.cost_estimate_usd.toFixed(4)}`);
+  return bits.length ? kleur.dim(`  ${bits.join(" · ")}`) : "";
+}
+
+/** Prefix every content line with a soft gutter bar so a block reads as one unit. */
+function block(text: string): string {
+  const bar = kleur.dim("│");
   return text
     .split("\n")
-    .map((l) => pad + l)
+    .map((l) => `    ${bar} ${kleur.dim(l)}`)
     .join("\n");
 }
 
+/** A thin section rule, e.g. `── deliberating · consensus ──────────`. */
+export function rule(label: string): string {
+  const head = kleur.dim("── ") + kleur.bold().cyan(label) + kleur.dim(" ");
+  const visibleLen = 3 + label.length + 1;
+  return head + kleur.dim("─".repeat(Math.max(0, 56 - visibleLen)));
+}
+
 export class Trace {
-  private seenRuns = 0;
   private seenJudge = 0;
+  private onStart?: (ev: AgentStartEvent) => void;
+  private onDone?: (ev: AgentDoneEvent) => void;
 
   constructor(public visible: boolean) {}
 
+  /** Subscribe to the progress bus for the lifetime of the session. The handlers
+   *  read `this.visible` at emit time, so `/show` / `/hide` take effect live. */
+  attach(): void {
+    this.onStart = (ev) => {
+      if (!this.visible) return;
+      const { glyph, color, label } = roleStyle(ev.role);
+      console.log(`  ${color(glyph)} ${color(label)} ${kleur.dim(`· ${ev.agent_id}`)} ${kleur.dim().italic("· working…")}`);
+    };
+    this.onDone = ({ run }) => this.renderRun(run);
+    progress.on("start", this.onStart);
+    progress.on("done", this.onDone);
+  }
+
+  detach(): void {
+    if (this.onStart) progress.off("start", this.onStart);
+    if (this.onDone) progress.off("done", this.onDone);
+  }
+
   reset(): void {
-    this.seenRuns = 0;
     this.seenJudge = 0;
   }
 
-  /** Emit a header + the rendered contribution for each new agent run, and each
-   *  new judge verdict. Agent *failures* surface even when the trace is hidden —
-   *  a silent failure is worse than a noisy one. */
-  update(state: { runs?: AgentRun[]; judge_history?: JudgeDecision[] }): void {
-    const runs = state.runs ?? [];
-    while (this.seenRuns < runs.length) {
-      const r = runs[this.seenRuns++];
-      if (!r) continue;
-      if (runFailed(r)) {
-        console.warn(kleur.yellow(`  ⚠ ${r.role} (${r.agent_id}) ${renderFailure(r)}`));
-      } else if (this.visible) {
-        const cost = r.cost_estimate_usd != null ? ` · $${r.cost_estimate_usd.toFixed(4)}` : "";
-        console.log(kleur.dim(`  · ${r.role} (${r.agent_id})${cost}`));
-        console.log(kleur.dim(indent(renderContribution(r))));
-      }
+  private renderRun(run: AgentRun): void {
+    const { glyph, color, label } = roleStyle(run.role);
+    if (runFailed(run)) {
+      console.warn(`  ${kleur.yellow("✗")} ${kleur.yellow(label)} ${kleur.dim(`· ${run.agent_id}`)} ${kleur.yellow(renderFailure(run))}`);
+      return;
     }
+    if (!this.visible) return;
+    if (run.role === "finalizer") {
+      const changed = run.files_changed?.length ? kleur.dim(` — edited ${run.files_changed.join(", ")}`) : "";
+      console.log(`  ${color(glyph)} ${kleur.bold(color("finalizer"))} ${kleur.dim(`· ${run.agent_id}`)}${meta(run)}${changed}`);
+      return;
+    }
+    console.log(`  ${color(glyph)} ${kleur.bold(color(label))} ${kleur.dim(`· ${run.agent_id}`)}${meta(run)}`);
+    console.log(block(renderContribution(run, 800)));
+  }
+
+  /** Surface new judge verdicts from a streamed state snapshot. */
+  update(state: { judge_history?: JudgeDecision[] }): void {
     if (!this.visible) return;
     const judges = state.judge_history ?? [];
     while (this.seenJudge < judges.length) {
       const j = judges[this.seenJudge++];
       if (!j) continue;
-      console.log(kleur.dim(`  · judge → ${j.winner}${j.reason ? `: ${j.reason}` : ""}`));
+      console.log(`  ${kleur.magenta("⚖")} ${kleur.magenta().bold("judge")} ${kleur.dim("→")} ${kleur.bold(j.winner)}`);
+      if (j.reason) console.log(block(j.reason));
     }
-  }
-
-  /** Log the finalizer step. A finalizer failure is surfaced always (it's the
-   *  source of the answer and the edits); a success line only when visible. */
-  finalizer(run: AgentRun): void {
-    if (runFailed(run)) {
-      console.warn(kleur.yellow(`  ⚠ finalizer (${run.agent_id}) ${renderFailure(run)}`));
-      return;
-    }
-    if (!this.visible) return;
-    const cost = run.cost_estimate_usd != null ? ` · $${run.cost_estimate_usd.toFixed(4)}` : "";
-    const changed = run.files_changed?.length
-      ? ` — edited ${run.files_changed.join(", ")}`
-      : "";
-    console.log(kleur.dim(`  · finalizer (${run.agent_id})${cost}${changed}`));
   }
 }

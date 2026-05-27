@@ -48,7 +48,9 @@ export function defaultConfig(mode: Mode, agents: AgentCfg[] = BASE_AGENTS): Rec
         version: 1,
         mode,
         agents,
-        consensus: { participants: ids, engine: { model: "claude-haiku-4-5" }, threshold: 0.66 },
+        // Consensus is structurally single-pass (each agent reviews once → engine
+        // merges); max_rounds is recorded explicitly so the cap is visible.
+        consensus: { participants: ids, engine: { model: "claude-haiku-4-5" }, threshold: 0.66, max_rounds: 1 },
       };
     case "debate":
       return {
