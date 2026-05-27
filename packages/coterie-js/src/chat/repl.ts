@@ -93,7 +93,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   console.log(
     kleur.dim(
       `  mode=${mode} · workdir=${opts.workdir} · agents: ${agents.map((a) => a.id).join(", ")} · $0 metered\n` +
-        "  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.",
+        "  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands. /mode to change modes.",
     ),
   );
   // An agent that's installed but signed out isn't broken — it just can't join.
