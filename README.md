@@ -13,7 +13,8 @@
 ```
 ▲ coterie chat
   mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
-  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands. /mode to change modes.
+  modes: single, adversarial, debate, tournament, consensus
+  Each turn: agents deliberate, then one finalizer applies edits + replies. /mode to change modes. /help for commands.
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)
@@ -100,15 +101,10 @@ shell does — whatever works in your terminal works here. No `ANTHROPIC_API_KEY
 
 ## Install
 
-Coterie isn't on npm yet — install from source and link the `coterie` command
-onto your PATH:
+Install from npm — this puts the `coterie` command on your PATH:
 
 ```bash
-git clone https://github.com/cxk280/coterie
-cd coterie/packages/coterie-js
-npm install
-npm run build      # compile TypeScript → dist/
-npm link           # puts `coterie` on your PATH globally
+npm install -g coterie
 ```
 
 Verify:
@@ -117,6 +113,18 @@ Verify:
 coterie --help     # should list `chat`, `run`, and `doctor`
 coterie doctor     # checks you have at least two agent CLIs ready
 ```
+
+<details>
+<summary>Or install from source</summary>
+
+```bash
+git clone https://github.com/cxk280/coterie
+cd coterie/packages/coterie-js
+npm install
+npm run build      # compile TypeScript → dist/
+npm link           # puts `coterie` on your PATH globally
+```
+</details>
 
 ## Use it
 
