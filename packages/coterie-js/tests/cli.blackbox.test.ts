@@ -17,8 +17,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, "..");
 const cli = join(pkgRoot, "dist", "cli.js");
 
-function runCli(args: string[], env: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env, timeout: 30_000 });
+function runCli(args: string[], env: NodeJS.ProcessEnv, input = ""): SpawnSyncReturns<string> {
+  return spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env, input, timeout: 30_000 });
 }
 
 const cleanups: Array<() => void> = [];
@@ -27,8 +27,10 @@ afterEach(() => {
 });
 
 /** A hermetic env where only the named CLIs are installed (stub on PATH) and
- *  signed in (matching credential file under a throwaway HOME). */
-function sandboxEnv(present: string[]): NodeJS.ProcessEnv {
+ *  signed in (matching credential file under a throwaway HOME). Pass `signedOut`
+ *  to make a present agent report installed-but-not-signed-in (no credential
+ *  fixture; cursor-agent's `status` stub answers isAuthenticated:false). */
+function sandboxEnv(present: string[], signedOut: string[] = []): NodeJS.ProcessEnv {
   const bin = mkdtempSync(join(tmpdir(), "coterie-bin-"));
   const home = mkdtempSync(join(tmpdir(), "coterie-home-"));
   cleanups.push(() => {
@@ -36,6 +38,7 @@ function sandboxEnv(present: string[]): NodeJS.ProcessEnv {
     rmSync(home, { recursive: true, force: true });
   });
   for (const name of present) {
+    const out = signedOut.includes(name);
     const stub = join(bin, name);
     // cursor-agent's auth is probed via `cursor-agent status --format json`, so
     // its stub answers that; the others just report a version. Each CLI also
@@ -44,12 +47,13 @@ function sandboxEnv(present: string[]): NodeJS.ProcessEnv {
     if (name === "cursor-agent") {
       writeFileSync(
         stub,
-        `#!/bin/sh\nif [ "$1" = "status" ]; then echo '{"isAuthenticated":true}'; exit 0; fi\necho "${name} 1.0.0"\nexit 0\n`,
+        `#!/bin/sh\nif [ "$1" = "status" ]; then echo '{"isAuthenticated":${out ? "false" : "true"}}'; exit 0; fi\necho "${name} 1.0.0"\nexit 0\n`,
       );
     } else {
       writeFileSync(stub, `#!/bin/sh\necho "${name} 1.0.0"\nexit 0\n`);
     }
     chmodSync(stub, 0o755);
+    if (out) continue; // installed but signed out → withhold the credential fixture
     if (name === "claude") writeFileSync(join(home, ".claude.json"), "{}");
     if (name === "codex") {
       mkdirSync(join(home, ".codex"), { recursive: true });
@@ -89,6 +93,21 @@ describe("coterie CLI (black-box)", () => {
     expect(r.stdout).toMatch(/\brun\b/);
   });
 
+  it("bare `coterie` prints help and exits 0 (not an error)", () => {
+    const r = runCli([], { PATH: process.env.PATH });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/\bchat\b/);
+    expect(r.stdout).toMatch(/\bdoctor\b/);
+  });
+
+  it("an unknown command points the user at --help", () => {
+    const r = runCli(["frobnicate"], { PATH: process.env.PATH });
+    expect(r.status).toBe(1);
+    const out = r.stderr + r.stdout;
+    expect(out).toMatch(/unknown command/i);
+    expect(out).toMatch(/coterie --help/);
+  });
+
   it("chat with an unknown mode exits 2", () => {
     const r = runCli(["chat", "--mode", "bogus"], { PATH: process.env.PATH });
     expect(r.status).toBe(2);
@@ -119,6 +138,29 @@ describe("coterie CLI (black-box)", () => {
     expect(r.status).toBe(1);
     expect(out).toMatch(/claude[^\n]*not installed/);
     expect(out).toMatch(/codex[^\n]*not installed/);
+  });
+
+  it("a bare 'exit' in the REPL quits without dispatching a (paid) round", () => {
+    const r = runCli(["chat"], sandboxEnv(["claude", "codex"]), "exit\n");
+    const out = r.stdout + r.stderr;
+    expect(r.status).toBe(0);
+    expect(out).toContain("bye.");
+    expect(out).not.toMatch(/deliberation/i); // never reached the coordination round
+  });
+
+  it("names an installed-but-signed-out agent instead of silently dropping it", () => {
+    // claude + codex ready (2 → REPL opens); cursor-agent installed but signed out.
+    const r = runCli(
+      ["chat"],
+      sandboxEnv(["claude", "codex", "cursor-agent"], ["cursor-agent"]),
+      "/exit\n",
+    );
+    const out = r.stdout + r.stderr;
+    expect(r.status).toBe(0);
+    expect(out).toMatch(/cursor-agent is installed but not signed in/);
+    expect(out).toMatch(/cursor-agent login/); // tells them how to fix it
+    // and it isn't in the active lineup
+    expect(out).not.toMatch(/agents:[^\n]*cursor/);
   });
 });
 

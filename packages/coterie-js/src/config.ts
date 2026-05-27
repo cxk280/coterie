@@ -11,7 +11,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = resolve(here, "..", "schemas", "coterie.config.schema.json");
 
 export function loadConfig(path: string): Record<string, any> {
-  const raw = parseYaml(readFileSync(path, "utf8"));
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (e: any) {
+    if (e?.code === "ENOENT") throw new Error(`Config file not found: ${path}`);
+    throw e;
+  }
+  const raw = parseYaml(text);
   try {
     const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
     const ajv = new Ajv2020({ allErrors: true, strict: false });

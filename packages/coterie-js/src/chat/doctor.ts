@@ -40,11 +40,17 @@ export function formatDoctor(r: DoctorResult): string {
       : `${r.ready} of ${total} ready — Coterie needs at least ${MIN_AGENTS}. ` +
           `Install or sign in to one more above.`,
   );
-  lines.push(
-    "",
-    "Sign-in is detected from each CLI's standard credential location (honoring its " +
-      "env overrides). If a CLI works in your shell but shows as not signed in here, " +
-      "it's a false alarm — Coterie uses whatever your shell does.",
-  );
+  // The "not signed in" check is a heuristic (it reads each tool's saved
+  // credentials), so it can occasionally be wrong. Only explain that when it's
+  // relevant — i.e. when something actually shows as not signed in. When agents
+  // are simply not installed, or all are ready, the note is just noise.
+  if (r.statuses.some((s) => s.reason === "not signed in")) {
+    lines.push(
+      "",
+      "Note: sign-in is detected by checking each tool's saved credentials. If a tool " +
+        "already works in your terminal but shows as not signed in above, you can ignore " +
+        "that — Coterie runs each tool exactly as your shell does.",
+    );
+  }
   return lines.join("\n");
 }

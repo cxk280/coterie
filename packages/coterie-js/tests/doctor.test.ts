@@ -73,7 +73,7 @@ describe("runDoctor — needs at least two agents", () => {
 });
 
 describe("formatDoctor", () => {
-  it("renders the verdict, per-agent marks, and the best-effort caveat", () => {
+  it("renders the verdict and per-agent marks", () => {
     const ok = formatDoctor({
       statuses: [
         { cli: "claude", ok: true, reason: "ready" },
@@ -88,7 +88,6 @@ describe("formatDoctor", () => {
     expect(ok).toContain("✗ cursor-agent");
     expect(ok).toContain("2 of 3 ready");
     expect(ok).toContain("good to go");
-    expect(ok).toMatch(/false alarm/i);
 
     const notOk = formatDoctor({
       statuses: [{ cli: "claude", ok: true, reason: "ready" }],
@@ -96,5 +95,30 @@ describe("formatDoctor", () => {
       ok: false,
     });
     expect(notOk).toContain("needs at least 2");
+  });
+
+  it("shows the credential caveat only when an agent is 'not signed in', not when merely 'not installed'", () => {
+    const notInstalled = formatDoctor({
+      statuses: [
+        { cli: "claude", ok: true, reason: "ready" },
+        { cli: "codex", ok: true, reason: "ready" },
+        { cli: "cursor-agent", ok: false, reason: "not installed", fix: "Install: ..." },
+      ],
+      ready: 2,
+      ok: true,
+    });
+    expect(notInstalled).not.toMatch(/sign-in is detected/i);
+
+    const signedOut = formatDoctor({
+      statuses: [
+        { cli: "claude", ok: true, reason: "ready" },
+        { cli: "codex", ok: true, reason: "ready" },
+        { cli: "cursor-agent", ok: false, reason: "not signed in", fix: "Log in: ..." },
+      ],
+      ready: 2,
+      ok: true,
+    });
+    expect(signedOut).toMatch(/sign-in is detected/i);
+    expect(signedOut).not.toMatch(/false alarm/i); // de-idiomed for non-native readers
   });
 });

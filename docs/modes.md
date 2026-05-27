@@ -30,7 +30,9 @@ a product. Five modes ship today. Pick by task shape, not by familiarity.
 - `consensus` is N CLI invocations + 1 engine LLM call.
 - `tournament` is N CLI invocations + 1 judge LLM call.
 
-Set `budget.max_usd_per_task` in any mode to bound spending.
+On the default subscription setup these invocations are `$0 metered` — they ride your
+Claude/ChatGPT/Cursor logins, not a pay-as-you-go API key. If you instead wire a metered
+API provider (on the roadmap), `budget.max_usd_per_task` caps spend per task.
 
 ## `single` — supervisor routes
 
@@ -112,4 +114,4 @@ multiple agent runs manually.
 - `delegate-and-verify` — one strong agent plans, multiple weaker agents execute, plan agent verifies.
 - `committee` — N specialists vote on each subtask; plurality wins.
 
-Adding a mode is a new file in `src/coterie/modes/` + a `@register_mode` decorator. The dispatcher in `graph.py` discovers it automatically.
+Adding a mode is a new file in `packages/coterie-js/src/modes/` that calls `registerMode("<name>", build)`, plus an import in `src/modes/index.ts`. The graph dispatcher picks it up from the registry.

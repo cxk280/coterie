@@ -11,7 +11,8 @@ coterie chat                       # in any repo — each prompt runs a multi-ag
 
 ```
 ▲ coterie chat
-  mode=adversarial · workdir=. · coordination=subscription (claude -p)
+  mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
+  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)

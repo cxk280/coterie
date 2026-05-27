@@ -13,12 +13,17 @@ import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
 import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
-import { availableAgents } from "./preflight.js";
+import { agentStatuses } from "./preflight.js";
 import { digestRound } from "./render.js";
 import { Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
-const MODES: Mode[] = ["single", "consensus", "adversarial", "debate", "tournament"];
+const MODES: Mode[] = ["single", "adversarial", "debate", "tournament", "consensus"];
+
+/** Bare words (no leading slash) that mean "leave the REPL". Without this they'd
+ *  be sent to the agents as a task — wasting a real (subscription) round and the
+ *  user's time on the most reflexive action there is. */
+const QUIT_WORDS = new Set(["exit", "quit", "q", ":q"]);
 
 async function buildLlms(mode: Mode, cfg: any): Promise<Record<string, LLMClient | null>> {
   return {
@@ -36,7 +41,7 @@ Commands:
   /show /hide    show or hide the live agent exchanges
   /clear         forget the conversation so far
   /help          this help
-  /exit          quit
+  /exit          quit (or just type 'exit' / 'quit')
 
 Each turn the agents deliberate (review/critique/compete, in throwaway
 workspaces), then one final agent applies the edits in your workdir and writes
@@ -50,7 +55,12 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
 
   // Build the session lineup from whichever agents are actually available; need
   // at least two to coordinate. Roles within each mode are auto-assigned from it.
-  const agents = availableAgents();
+  // Probe every known agent once, then derive both the ready lineup and the
+  // installed-but-signed-out ones (so we can tell the user why they're missing).
+  const statuses = agentStatuses();
+  const agents = statuses.filter((s) => s.status.ok).map((s) => s.agent);
+  const signedOut = statuses.filter((s) => s.status.reason === "not signed in");
+
   if (agents.length < MIN_AGENTS) {
     console.error(kleur.yellow(formatDoctor(runDoctor())));
     process.exitCode = 1;
@@ -67,6 +77,15 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
         "  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands.",
     ),
   );
+  // An agent that's installed but signed out isn't broken — it just can't join.
+  // Say so clearly (and how to fix it) instead of silently dropping it.
+  for (const s of signedOut) {
+    console.log(
+      kleur.yellow(
+        `  ⚠ ${s.status.cli} is installed but not signed in — sitting this session out. ${s.status.fix ?? ""}`.trimEnd(),
+      ),
+    );
+  }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const setPrompt = () => rl.setPrompt(kleur.cyan(`\ncoterie(${mode})› `));
@@ -78,18 +97,21 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     try {
       if (!text) {
         // no-op
+      } else if (QUIT_WORDS.has(text.toLowerCase())) {
+        break;
       } else if (text.startsWith("/")) {
-        const [cmd, ...rest] = text.slice(1).split(/\s+/);
-        if (cmd === "exit" || cmd === "quit") break;
+        const [rawCmd, ...rest] = text.slice(1).split(/\s+/);
+        const cmd = (rawCmd ?? "").toLowerCase();
+        if (cmd === "exit" || cmd === "quit" || cmd === "q") break;
         else if (cmd === "help") console.log(HELP);
         else if (cmd === "hide") { trace.visible = false; console.log(kleur.dim("  (trace hidden)")); }
         else if (cmd === "show") { trace.visible = true; console.log(kleur.dim("  (trace shown)")); }
         else if (cmd === "clear") { transcript.clear(); console.log(kleur.dim("  (conversation cleared)")); }
         else if (cmd === "mode") {
-          const next = rest[0] as Mode;
+          const next = (rest[0] ?? "").toLowerCase() as Mode;
           if (MODES.includes(next)) { mode = next; setPrompt(); console.log(kleur.dim(`  (mode → ${mode})`)); }
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
-        } else console.log(kleur.red(`  unknown command '/${cmd}' — /help`));
+        } else console.log(kleur.red(`  unknown command '/${rawCmd ?? ""}' — /help`));
       } else {
         await runTurn(text, mode, opts.workdir, agents, transcript, trace);
       }

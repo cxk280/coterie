@@ -86,13 +86,31 @@ export function checkAgent(cli: string): AgentStatus {
   return { cli, ok: true, reason: "ready" };
 }
 
+export interface KnownAgentStatus {
+  agent: AgentCfg;
+  status: AgentStatus;
+}
+
+/** Status of every agent Coterie knows about, in preference order. Probing an
+ *  agent's auth can be slow (e.g. cursor shells out), so callers that need both
+ *  the ready lineup and the not-ready ones should call this ONCE and derive both
+ *  from it rather than calling `availableAgents()` plus a second pass. */
+export function agentStatuses(): KnownAgentStatus[] {
+  return KNOWN_AGENTS.map((agent) => {
+    const cli = ADAPTER_CLI[agent.adapter];
+    const status = cli
+      ? checkAgent(cli)
+      : { cli: agent.adapter, ok: false, reason: "not installed" as const };
+    return { agent, status };
+  });
+}
+
 /** The agents that are installed and signed in right now, in preference order —
  *  the lineup `coterie chat` coordinates and assigns roles from. */
 export function availableAgents(): AgentCfg[] {
-  return KNOWN_AGENTS.filter((a) => {
-    const cli = ADAPTER_CLI[a.adapter];
-    return cli ? checkAgent(cli).ok : false;
-  });
+  return agentStatuses()
+    .filter((s) => s.status.ok)
+    .map((s) => s.agent);
 }
 
 /** Check every agent CLI referenced by the config. Returns problems (empty = OK). */
