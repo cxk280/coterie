@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { runFailed } from "../src/chat/render.js";
+import { classifyFailure, runFailed } from "../src/chat/render.js";
 import type { AgentRun } from "../src/core/state.js";
 import { parseJsonLoose } from "../src/core/json.js";
 import { findingsAreParseable, parseFindings } from "../src/nodes/auditor.js";
@@ -50,5 +50,23 @@ describe("runFailed refinement", () => {
   });
   it("does NOT flag a normal run with stdout", () => {
     expect(runFailed(run({ stdout: "done", stderr: "note: something" }))).toBe(false);
+  });
+});
+
+describe("classifyFailure (adaptive lineup)", () => {
+  it("detects a rate limit and keeps the recovery hint", () => {
+    const c = classifyFailure(run({ exit_code: 1, stderr: "Error: rate limit reached. Try again in 42 minutes." }));
+    expect(c.kind).toBe("rate-limit");
+    expect(c.detail).toMatch(/try again in 42 minutes/i);
+  });
+
+  it("detects an auth / subscription problem", () => {
+    expect(classifyFailure(run({ exit_code: 1, stderr: "Authentication required. Please run login." })).kind).toBe("auth");
+    expect(classifyFailure(run({ exit_code: 1, stderr: "Your subscription has expired." })).kind).toBe("auth");
+  });
+
+  it("returns kind null for a successful run and for a generic failure", () => {
+    expect(classifyFailure(run({ stdout: "ok" })).kind).toBeNull();
+    expect(classifyFailure(run({ exit_code: 1, stderr: "segfault" })).kind).toBeNull();
   });
 });

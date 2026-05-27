@@ -9,14 +9,14 @@ import kleur from "kleur";
 import { gitRepoReady, IsolatedWorktreeExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { buildLLM } from "../core/llm/build.js";
-import type { Mode } from "../core/state.js";
+import type { AgentRun, Mode } from "../core/state.js";
 import { validateRuntimeConfig } from "../core/validate.js";
 import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
 import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
 import { agentStatuses, checkAgent } from "./preflight.js";
-import { digestRound } from "./render.js";
+import { classifyFailure, digestRound } from "./render.js";
 import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
@@ -125,6 +125,11 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   // Ctrl+C cancels the in-flight turn (aborting the agent subprocesses) and keeps
   // the session alive; at the prompt with nothing running it quits.
   let activeAbort: AbortController | null = null;
+  // Agents that hit a hard limit / auth failure this session, with the reason.
+  // We drop them from later turns when ≥2 agents remain; otherwise we keep them
+  // and bubble up the limit info (you can't coordinate with fewer than two).
+  const sidelined = new Map<string, string>();
+
   rl.on("SIGINT", () => {
     if (activeAbort && !activeAbort.signal.aborted) {
       activeAbort.abort();
@@ -158,12 +163,44 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
         } else console.log(kleur.red(`  unknown command '/${rawCmd ?? ""}' — /help`));
       } else {
+        // Build this turn's lineup: drop sidelined agents, but never below the
+        // two needed to coordinate.
+        let lineup = agents.filter((a) => !sidelined.has(a.id));
+        if (lineup.length < MIN_AGENTS) {
+          for (const a of agents) {
+            if (sidelined.has(a.id)) {
+              console.log(
+                kleur.yellow(
+                  `  ⚠ ${a.id} is unavailable (${sidelined.get(a.id)}) but kept — dropping it would leave fewer than ${MIN_AGENTS} agents.`,
+                ),
+              );
+            }
+          }
+          lineup = agents;
+        } else if (lineup.length < agents.length) {
+          for (const a of agents) {
+            if (sidelined.has(a.id)) console.log(kleur.dim(`  (sitting out ${a.id} this session — ${sidelined.get(a.id)})`));
+          }
+        }
+
         activeAbort = new AbortController();
         // LangGraph attaches an abort listener per step; lift the ceiling so a
         // multi-round turn doesn't trip Node's MaxListenersExceededWarning.
         setMaxListeners(128, activeAbort.signal);
         try {
-          await runTurn(text, mode, opts.workdir, agents, transcript, trace, activeAbort.signal);
+          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, activeAbort.signal);
+          // Learn from failures: sideline agents that hit a limit / auth problem.
+          for (const r of runs ?? []) {
+            const c = classifyFailure(r);
+            if (c.kind && !sidelined.has(r.agent_id)) {
+              sidelined.set(r.agent_id, c.detail || c.kind);
+              console.log(
+                kleur.yellow(
+                  `  ▸ ${r.agent_id} hit a ${c.kind} issue — sitting it out for the rest of this session. ${c.detail}`.trimEnd(),
+                ),
+              );
+            }
+          }
         } finally {
           activeAbort = null;
         }
@@ -187,7 +224,7 @@ async function runTurn(
   transcript: Transcript,
   trace: Trace,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<AgentRun[] | null> {
   const cfg = defaultConfig(mode, agents);
   validateRuntimeConfig(cfg);
   const llms = await buildLlms(mode, cfg);
@@ -233,7 +270,7 @@ async function runTurn(
       );
       transcript.add("user", text);
       transcript.add("assistant", `(no changes — deliberation ended as ${final.status})`);
-      return;
+      return final.runs ?? [];
     }
 
     if (trace.visible) console.log("\n" + rule("finalizing"));
@@ -258,13 +295,14 @@ async function runTurn(
 
     transcript.add("user", text);
     transcript.add("assistant", reply);
+    return [...(final.runs ?? []), run];
   } catch (e) {
     if (signal.aborted || (e instanceof Error && e.name === "AbortError")) {
       console.log(
         kleur.yellow("\n  ↩ canceled — back to the prompt.") +
           kleur.dim(" (Deliberation runs in a scratch copy, so your files are untouched.)"),
       );
-      return;
+      return null;
     }
     throw e;
   }

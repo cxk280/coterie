@@ -47,6 +47,29 @@ export function renderFailure(run: AgentRun): string {
   return `failed${exit}${detail ? `: ${detail.slice(0, 200)}` : ""}`;
 }
 
+const RATE_LIMIT_RE = /rate.?limit|quota|usage limit|too many requests|\b429\b|resets? (?:at|in)|try again (?:later|in)|exhausted/i;
+const AUTH_RE = /not logged in|unauthor|authentication|please (?:sign|log) ?in|login required|subscription|expired|invalid (?:api )?key|\b401\b|\b403\b/i;
+
+export interface FailureClass {
+  kind: "rate-limit" | "auth" | null;
+  /** A short note to bubble up — includes any "resets at…/try again in…" hint. */
+  detail: string;
+}
+
+/** Classify *why* a run failed so the session can adapt: drop a rate-limited or
+ *  signed-out agent when others remain, or bubble up when/whether it'll recover. */
+export function classifyFailure(run: AgentRun): FailureClass {
+  if (!runFailed(run)) return { kind: null, detail: "" };
+  const text = `${run.stderr}\n${run.stdout}`.trim();
+  const firstLine = text.split("\n").find((l) => l.trim())?.trim().slice(0, 200) ?? "";
+  // Surface a recovery hint if the CLI gave one.
+  const when = text.match(/(?:resets?|try again|retry)[^.\n]*?(?:at|in)\s+[^.\n]{1,40}/i)?.[0];
+  const detail = when ? `${firstLine}${firstLine.includes(when) ? "" : ` — ${when}`}` : firstLine;
+  if (RATE_LIMIT_RE.test(text)) return { kind: "rate-limit", detail };
+  if (AUTH_RE.test(text)) return { kind: "auth", detail };
+  return { kind: null, detail };
+}
+
 /** Render one agent's contribution as readable lines (no raw JSON). */
 export function renderContribution(run: AgentRun, maxChars = 1200): string {
   const findings = asFindingsArray(run.stdout);
