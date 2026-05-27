@@ -35,7 +35,7 @@ export class FakeAdapter extends CLIAdapter {
     return { stdout, stderr, exit_code, files_changed: [], duration_s: 0, cost_estimate_usd: null };
   }
 
-  override run(prompt: string, workdir: string): AdapterResult {
+  override async run(prompt: string, workdir: string): Promise<AdapterResult> {
     const invocations = FakeAdapter.invocationsByAgent.get(this.agent_id) ?? [];
     invocations.push({ prompt, workdir });
     FakeAdapter.invocationsByAgent.set(this.agent_id, invocations);

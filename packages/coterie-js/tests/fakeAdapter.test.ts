@@ -6,30 +6,30 @@ describe("FakeAdapter", () => {
   beforeEach(() => FakeAdapter.resetAll());
   afterEach(() => FakeAdapter.resetAll());
 
-  it("scripts and replays", () => {
+  it("scripts and replays", async () => {
     FakeAdapter.script("a", [{ stdout: "hi", stderr: "", exit_code: 0, files_changed: [], duration_s: 0, cost_estimate_usd: 0.001 }]);
-    const r = new FakeAdapter("a").run("x", ".");
+    const r = await new FakeAdapter("a").run("x", ".");
     expect(r.stdout).toBe("hi");
     expect(r.cost_estimate_usd).toBe(0.001);
   });
 
-  it("independent queues per agent_id", () => {
+  it("independent queues per agent_id", async () => {
     FakeAdapter.script("a", [{ stdout: "A", stderr: "", exit_code: 0, files_changed: [], duration_s: 0, cost_estimate_usd: null }]);
     FakeAdapter.script("b", [{ stdout: "B", stderr: "", exit_code: 0, files_changed: [], duration_s: 0, cost_estimate_usd: null }]);
-    expect(new FakeAdapter("a").run("x", ".").stdout).toBe("A");
-    expect(new FakeAdapter("b").run("x", ".").stdout).toBe("B");
+    expect((await new FakeAdapter("a").run("x", ".")).stdout).toBe("A");
+    expect((await new FakeAdapter("b").run("x", ".")).stdout).toBe("B");
   });
 
-  it("exhaustion throws", () => {
+  it("exhaustion rejects", async () => {
     FakeAdapter.script("a", [{ stdout: "once", stderr: "", exit_code: 0, files_changed: [], duration_s: 0, cost_estimate_usd: null }]);
     const adapter = new FakeAdapter("a");
-    adapter.run("x", ".");
-    expect(() => adapter.run("x", ".")).toThrow(FakeAdapterError);
+    await adapter.run("x", ".");
+    await expect(adapter.run("x", ".")).rejects.toThrow(FakeAdapterError);
   });
 
-  it("records invocations", () => {
+  it("records invocations", async () => {
     FakeAdapter.script("a", [{ stdout: "", stderr: "", exit_code: 0, files_changed: [], duration_s: 0, cost_estimate_usd: null }]);
-    new FakeAdapter("a").run("the-prompt", "/tmp");
+    await new FakeAdapter("a").run("the-prompt", "/tmp");
     expect(FakeAdapter.invocationsFor("a")).toEqual([{ prompt: "the-prompt", workdir: "/tmp" }]);
   });
 });

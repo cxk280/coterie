@@ -1,6 +1,7 @@
 /** The `coterie chat` REPL: a conversational loop where each turn runs through
  *  the active coordination mode and returns the synthesized result. */
 
+import { setMaxListeners } from "node:events";
 import { createInterface } from "node:readline";
 
 import kleur from "kleur";
@@ -15,7 +16,7 @@ import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
 import { agentStatuses } from "./preflight.js";
 import { digestRound } from "./render.js";
-import { Trace } from "./trace.js";
+import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
 const MODES: Mode[] = ["single", "adversarial", "debate", "tournament", "consensus"];
@@ -42,6 +43,7 @@ Commands:
   /clear         forget the conversation so far
   /help          this help
   /exit          quit (or just type 'exit' / 'quit')
+  Ctrl+C         cancel the current turn (press again at the prompt to quit)
 
 Each turn the agents deliberate (review/critique/compete, in throwaway
 workspaces), then one final agent applies the edits in your workdir and writes
@@ -69,6 +71,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
 
   const transcript = new Transcript();
   const trace = new Trace(!opts.quiet);
+  trace.attach();
 
   console.log(kleur.cyan().bold("▲ coterie chat"));
   console.log(
@@ -89,6 +92,19 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const setPrompt = () => rl.setPrompt(kleur.cyan(`\ncoterie(${mode})› `));
+
+  // Ctrl+C cancels the in-flight turn (aborting the agent subprocesses) and keeps
+  // the session alive; at the prompt with nothing running it quits.
+  let activeAbort: AbortController | null = null;
+  rl.on("SIGINT", () => {
+    if (activeAbort && !activeAbort.signal.aborted) {
+      activeAbort.abort();
+      console.log(kleur.yellow("\n  ↩ canceling this turn… (Ctrl+C again at the prompt to quit)"));
+    } else {
+      rl.close();
+    }
+  });
+
   setPrompt();
   rl.prompt();
 
@@ -113,7 +129,15 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
         } else console.log(kleur.red(`  unknown command '/${rawCmd ?? ""}' — /help`));
       } else {
-        await runTurn(text, mode, opts.workdir, agents, transcript, trace);
+        activeAbort = new AbortController();
+        // LangGraph attaches an abort listener per step; lift the ceiling so a
+        // multi-round turn doesn't trip Node's MaxListenersExceededWarning.
+        setMaxListeners(128, activeAbort.signal);
+        try {
+          await runTurn(text, mode, opts.workdir, agents, transcript, trace, activeAbort.signal);
+        } finally {
+          activeAbort = null;
+        }
       }
     } catch (e) {
       console.error(kleur.red(`  error: ${e instanceof Error ? e.message : String(e)}`));
@@ -121,6 +145,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     rl.prompt();
   }
 
+  trace.detach();
   rl.close();
   console.log(kleur.dim("\nbye."));
 }
@@ -132,6 +157,7 @@ async function runTurn(
   agents: AgentCfg[],
   transcript: Transcript,
   trace: Trace,
+  signal: AbortSignal,
 ): Promise<void> {
   const cfg = defaultConfig(mode, agents);
   const llms = await buildLlms(mode, cfg);
@@ -157,34 +183,47 @@ async function runTurn(
   };
 
   trace.reset();
-  if (trace.visible) console.log(kleur.dim(`  ↻ ${mode} deliberation…`));
+  if (trace.visible) console.log("\n" + rule(`deliberating · ${mode}`));
 
   let final: any = initial;
-  for await (const state of await graph.stream(initial, { streamMode: "values" })) {
-    final = state;
-    trace.update(state);
+  try {
+    // recursionLimit is a hard backstop against an unbounded loop (on top of each
+    // mode's own round cap); the modes settle in far fewer supersteps.
+    for await (const state of await graph.stream(initial, { streamMode: "values", signal, recursionLimit: 24 })) {
+      final = state;
+      trace.update(state);
+    }
+
+    if (trace.visible) console.log("\n" + rule("finalizing"));
+    // The finalizer (the judge seat) is the first available agent. Only pass a
+    // model when it's Claude Code — the judge-model aliases are Claude-specific.
+    const finalizerAdapter = agents[0]!.adapter;
+    const finalizerModel = finalizerAdapter === "claude-code" ? "claude-opus-4-7" : undefined;
+    const { answer, run } = await runFinalizer({
+      task,
+      digest: digestRound(final),
+      workdir,
+      adapter: finalizerAdapter,
+      model: finalizerModel,
+      signal,
+    });
+
+    const reply = answer || "(the finalizer produced no reply — check the workdir for edits)";
+    console.log("\n" + kleur.cyan().bold("coterie ›") + " " + reply);
+
+    const totalSpend = (final.spend_usd ?? 0) + (run.cost_estimate_usd ?? 0);
+    if (totalSpend) console.log(kleur.dim(`  (≈ $${totalSpend.toFixed(4)} subscription usage — $0 metered)`));
+
+    transcript.add("user", text);
+    transcript.add("assistant", reply);
+  } catch (e) {
+    if (signal.aborted || (e instanceof Error && e.name === "AbortError")) {
+      console.log(
+        kleur.yellow("\n  ↩ canceled — back to the prompt.") +
+          kleur.dim(" (Deliberation runs in a scratch copy, so your files are untouched.)"),
+      );
+      return;
+    }
+    throw e;
   }
-
-  if (trace.visible) console.log(kleur.dim("  ↻ finalizing — applying edits + composing reply…"));
-  // The finalizer (the judge seat) is the first available agent. Only pass a
-  // model when it's Claude Code — the judge-model aliases are Claude-specific.
-  const finalizerAdapter = agents[0]!.adapter;
-  const finalizerModel = finalizerAdapter === "claude-code" ? "claude-opus-4-7" : undefined;
-  const { answer, run } = await runFinalizer({
-    task,
-    digest: digestRound(final),
-    workdir,
-    adapter: finalizerAdapter,
-    model: finalizerModel,
-  });
-  trace.finalizer(run);
-
-  const reply = answer || "(the finalizer produced no reply — check the workdir for edits)";
-  console.log("\n" + reply);
-
-  const totalSpend = (final.spend_usd ?? 0) + (run.cost_estimate_usd ?? 0);
-  if (totalSpend) console.log(kleur.dim(`  (≈ $${totalSpend.toFixed(4)} subscription usage — $0 metered)`));
-
-  transcript.add("user", text);
-  transcript.add("assistant", reply);
 }

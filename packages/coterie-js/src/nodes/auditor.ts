@@ -63,7 +63,7 @@ export function makeAdversarialJudgeNode(llm: LLMClient | null) {
     const judgeCfg = adv.judge ?? {};
     const threshold = judgeCfg.sustain_threshold ?? "medium";
     const minRank = SEVERITY_RANK[threshold] ?? 2;
-    const maxRounds = adv.max_rounds ?? 3;
+    const maxRounds = adv.max_rounds ?? 2;
 
     const modeState = { ...(state.mode_state ?? {}) };
     const findings = (modeState.auditor_findings ?? []) as any[];

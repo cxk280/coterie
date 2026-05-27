@@ -5,6 +5,7 @@
  *  answer, so the user never sees raw findings JSON. */
 
 import { LocalSubprocessExecutor, type AdapterExecutor } from "../core/executor.js";
+import { progress } from "../core/progress.js";
 import { ADAPTER_REGISTRY } from "../core/registry.js";
 import type { AgentRun } from "../core/state.js";
 
@@ -35,6 +36,7 @@ export interface FinalizerOpts {
   model?: string;
   agentId?: string;
   executor?: AdapterExecutor;
+  signal?: AbortSignal;
 }
 
 /** Run the finalizer agent and return its prose answer plus the raw run record. */
@@ -44,7 +46,11 @@ export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: strin
   const executor = opts.executor ?? new LocalSubprocessExecutor();
   const prompt = buildFinalizerPrompt(opts.task, opts.digest);
 
-  const result = executor.execute(adapter, prompt, opts.workdir, { timeoutMs: 600_000 });
+  progress.start({ agent_id: adapter.agent_id, role: "finalizer" });
+  const result = await executor.execute(adapter, prompt, opts.workdir, {
+    timeoutMs: 600_000,
+    signal: opts.signal,
+  });
   const run: AgentRun = {
     agent_id: adapter.agent_id,
     role: "finalizer",
@@ -56,5 +62,6 @@ export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: strin
     duration_s: result.duration_s,
     cost_estimate_usd: result.cost_estimate_usd,
   };
+  progress.done({ run });
   return { answer: (result.stdout ?? "").trim(), run };
 }

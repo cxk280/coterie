@@ -2,6 +2,7 @@
 
 import type { CLIAdapter } from "../adapters/base.js";
 import type { AdapterExecutor } from "../core/executor.js";
+import { progress } from "../core/progress.js";
 import { ADAPTER_REGISTRY } from "../core/registry.js";
 import type { CoterieState } from "../core/state.js";
 
@@ -53,7 +54,7 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
   if ((opts.agent_id == null) === (opts.agent_id_fn == null)) {
     throw new Error("exactly one of agent_id or agent_id_fn must be provided");
   }
-  return async (state: CoterieState) => {
+  return async (state: CoterieState, config?: { signal?: AbortSignal }) => {
     if (state.status === "failed" || state.status === "awaiting_human") {
       return {};
     }
@@ -71,8 +72,10 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
       ? opts.prompt_fn(state)
       : (state.plan ?? [state.task])[state.current_step_idx ?? 0] ?? state.task;
 
-    const result = opts.executor.execute(adapter, prompt, opts.workdir, {
+    progress.start({ agent_id: resolvedId, role: opts.role });
+    const result = await opts.executor.execute(adapter, prompt, opts.workdir, {
       timeoutMs: (agentCfg.timeout_s ?? 600) * 1000,
+      signal: config?.signal,
     });
 
     const run = {
@@ -86,6 +89,7 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
       duration_s: result.duration_s,
       cost_estimate_usd: result.cost_estimate_usd,
     };
+    progress.done({ run });
     const update: any = {
       runs: [run],
       spend_usd: result.cost_estimate_usd ?? 0,

@@ -6,6 +6,7 @@ import kleur from "kleur";
 
 import { renderFailure, runFailed } from "./chat/render.js";
 import { loadConfig } from "./config.js";
+import { progress } from "./core/progress.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
 import type { LLMClient } from "./core/llm/base.js";
 import { buildLLM } from "./core/llm/build.js";
@@ -54,12 +55,19 @@ async function main() {
       const graph = buildGraph({ workdir: opts.workdir, executor, config: cfg, ...llms });
       console.log(kleur.cyan().bold(`— coterie · mode=${mode} · ${cfg.agents.length} agents —`));
 
+      // Stream live progress so a long run isn't a silent wait.
+      const onDone = ({ run }: { run: any }) => {
+        const tag = runFailed(run) ? kleur.yellow(`⚠ ${renderFailure(run)}`) : kleur.dim("done");
+        console.log(kleur.dim(`  · ${run.role} (${run.agent_id}) `) + tag);
+      };
+      progress.on("done", onDone);
+
       const initial = {
         task, mode, plan: [], current_step_idx: 0, runs: [], artifacts: {},
         status: "planning", config: cfg, spend_usd: 0, route_history: [],
         judge_history: [], next_agent: null, mode_state: {},
       };
-      const final: any = await graph.invoke(initial);
+      const final: any = await graph.invoke(initial, { recursionLimit: 24 }).finally(() => progress.off("done", onDone));
       if (final.runs?.length) console.log(final.runs[final.runs.length - 1].stdout);
       for (const r of final.runs ?? []) {
         if (runFailed(r)) console.error(kleur.yellow(`⚠ ${r.role} (${r.agent_id}) ${renderFailure(r)}`));
