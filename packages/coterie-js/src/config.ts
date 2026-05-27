@@ -18,17 +18,35 @@ export function loadConfig(path: string): Record<string, any> {
     if (e?.code === "ENOENT") throw new Error(`Config file not found: ${path}`);
     throw e;
   }
-  const raw = parseYaml(text);
+
+  let raw: unknown;
   try {
-    const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
+    raw = parseYaml(text);
+  } catch (e: any) {
+    throw new Error(`Invalid YAML in ${path}: ${e?.message ?? String(e)}`);
+  }
+  if (raw === null || raw === undefined) {
+    throw new Error(`Config file is empty: ${path}`);
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Invalid config: ${path} must contain a YAML mapping (key: value) at the top level`);
+  }
+
+  // Validate against the bundled schema. Only a *missing* schema file is skipped
+  // (a partial/broken install); a schema that loads MUST run, so genuine config
+  // errors always surface rather than being silently swallowed.
+  let schemaText: string | null = null;
+  try {
+    schemaText = readFileSync(SCHEMA_PATH, "utf8");
+  } catch {
+    schemaText = null;
+  }
+  if (schemaText) {
     const ajv = new Ajv2020({ allErrors: true, strict: false });
-    const validate = ajv.compile(schema);
+    const validate = ajv.compile(JSON.parse(schemaText));
     if (!validate(raw)) {
       throw new Error(`Invalid config: ${ajv.errorsText(validate.errors)}`);
     }
-  } catch (e: any) {
-    if (e?.message?.startsWith?.("Invalid config:")) throw e;
-    // Schema unavailable — best-effort skip
   }
-  return raw;
+  return raw as Record<string, any>;
 }

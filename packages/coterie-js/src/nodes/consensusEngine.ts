@@ -22,7 +22,9 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
     const cfg = state.config;
     const consCfg = cfg.consensus ?? {};
     const engineCfg = consCfg.engine ?? {};
-    const threshold = engineCfg.confirm_threshold ?? 0.5;
+    // `consensus.threshold` is the documented key; `engine.confirm_threshold` is
+    // an older alias. Honor either (threshold wins) before falling back.
+    const threshold = consCfg.threshold ?? engineCfg.confirm_threshold ?? 0.5;
     const participants = (consCfg.participants ?? (cfg.agents as any[]).map((a: any) => a.id)) as string[];
     const n = participants.length;
 

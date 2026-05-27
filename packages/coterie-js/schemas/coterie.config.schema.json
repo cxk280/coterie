@@ -83,6 +83,14 @@
           "items": {"type": "string"},
           "minItems": 2
         },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.5,
+          "description": "Agreement ratio at which a clustered finding is 'confirmed'."
+        },
+        "max_rounds": {"type": "integer", "minimum": 1, "default": 1},
         "engine": {
           "type": "object",
           "additionalProperties": false,

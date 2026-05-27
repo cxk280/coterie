@@ -18,6 +18,16 @@ export interface ExecuteOpts {
   signal?: AbortSignal;
 }
 
+/** Whether `workdir` is a git repo with ≥1 commit — the precondition for isolated
+ *  worktree deliberation. Lets callers warn upfront instead of failing mid-turn. */
+export function gitRepoReady(workdir: string): { ok: boolean; reason?: string } {
+  const inside = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: workdir, encoding: "utf8" });
+  if (inside.status !== 0) return { ok: false, reason: "not a git repository" };
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: workdir, encoding: "utf8" });
+  if (head.status !== 0) return { ok: false, reason: "the git repository has no commits yet" };
+  return { ok: true };
+}
+
 export interface AdapterExecutor {
   execute(
     adapter: CLIAdapter,
@@ -55,12 +65,22 @@ export class IsolatedWorktreeExecutor implements AdapterExecutor {
 
   private makeIsolated(base: string): string {
     const d = mkdtempSync(join(tmpdir(), "coterie-wt-"));
-    if (existsSync(join(base, ".git"))) {
-      const proc = spawnSync("git", ["worktree", "add", "--detach", d], {
-        cwd: base,
-        encoding: "utf8",
-      });
-      if (proc.status === 0) return d;
+    if (!existsSync(join(base, ".git"))) {
+      rmSync(d, { recursive: true, force: true });
+      throw new Error(
+        `coterie runs deliberation in an isolated git worktree, but ${base} is not a git repository. ` +
+          "Run `git init && git add -A && git commit -m init` there first.",
+      );
+    }
+    const proc = spawnSync("git", ["worktree", "add", "--detach", d], { cwd: base, encoding: "utf8" });
+    if (proc.status !== 0) {
+      // Never silently run the agent against an empty temp dir with none of the
+      // user's code — fail loudly instead.
+      rmSync(d, { recursive: true, force: true });
+      throw new Error(
+        `could not create an isolated worktree in ${base}: ${(proc.stderr || "").trim().slice(0, 200)} ` +
+          "(a git repo needs at least one commit).",
+      );
     }
     return d;
   }

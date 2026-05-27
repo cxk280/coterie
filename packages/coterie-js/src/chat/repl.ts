@@ -6,15 +6,16 @@ import { createInterface } from "node:readline";
 
 import kleur from "kleur";
 
-import { IsolatedWorktreeExecutor } from "../core/executor.js";
+import { gitRepoReady, IsolatedWorktreeExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { buildLLM } from "../core/llm/build.js";
 import type { Mode } from "../core/state.js";
+import { validateRuntimeConfig } from "../core/validate.js";
 import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
 import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
-import { agentStatuses } from "./preflight.js";
+import { agentStatuses, checkAgent } from "./preflight.js";
 import { digestRound } from "./render.js";
 import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
@@ -69,6 +70,21 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     return;
   }
 
+  // Deliberation runs in an isolated git worktree of the workdir, so it must be a
+  // git repo with a commit — otherwise every turn would error mid-flight.
+  const git = gitRepoReady(opts.workdir);
+  if (!git.ok) {
+    console.error(
+      kleur.yellow(
+        `Can't start: ${opts.workdir} is ${git.reason}. coterie runs each turn's deliberation in an ` +
+          "isolated git worktree, so the working directory must be a git repo with at least one commit.\n" +
+          "  Fix: cd into your project and run `git init && git add -A && git commit -m init`.",
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const transcript = new Transcript();
   const trace = new Trace(!opts.quiet);
   trace.attach();
@@ -86,6 +102,19 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     console.log(
       kleur.yellow(
         `  ⚠ ${s.status.cli} is installed but not signed in — sitting this session out. ${s.status.fix ?? ""}`.trimEnd(),
+      ),
+    );
+  }
+  // Coordination (routing / judging / merging) runs on Claude (`claude -p`),
+  // regardless of the agent lineup. If it looks unavailable, warn — turns may
+  // fail — but don't block (the auth check is a heuristic; claude may still work).
+  const coord = checkAgent("claude");
+  if (!coord.ok) {
+    console.log(
+      kleur.yellow(
+        `  ⚠ coordination runs on Claude (\`claude -p\`), which looks ${coord.reason}. ` +
+          "Turns may fail until it's available. If \`claude\` works in your shell, ignore this. " +
+          "(Pluggable coordination providers are on the roadmap.)",
       ),
     );
   }
@@ -160,6 +189,7 @@ async function runTurn(
   signal: AbortSignal,
 ): Promise<void> {
   const cfg = defaultConfig(mode, agents);
+  validateRuntimeConfig(cfg);
   const llms = await buildLlms(mode, cfg);
   // Deliberation never touches the real workdir — it runs in throwaway worktrees
   // and feeds the finalizer as advice. The finalizer is the sole mutator.

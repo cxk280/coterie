@@ -22,7 +22,7 @@ function makeEliminatedAwareParticipant(agent_id: string, workdir: string, execu
 export function build(opts: ModeBuildOpts) {
   const { workdir, executor, config, judge_llm } = opts;
   const tournament = config.tournament ?? {};
-  const participants = (tournament.participants ?? []) as string[];
+  const participants = (tournament.participants ?? (config.agents as any[]).map((a) => a.id)) as string[];
   const multiRound = (tournament.rounds ?? 1) > 1;
 
   let g: any = new StateGraph(CoterieStateAnnotation)
