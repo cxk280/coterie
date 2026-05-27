@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentRun, CoterieState } from "../src/core/state.js";
 import { buildFinalizerPrompt } from "../src/chat/finalizer.js";
-import { digestRound, renderContribution } from "../src/chat/render.js";
+import { digestRound, renderContribution, renderFailure, runFailed } from "../src/chat/render.js";
 
 function run(partial: Partial<AgentRun>): AgentRun {
   return {
@@ -96,6 +96,23 @@ describe("digestRound", () => {
 
   it("never returns an empty string", () => {
     expect(digestRound(base)).toBeTruthy();
+  });
+});
+
+describe("runFailed / renderFailure", () => {
+  it("flags a non-zero exit", () => {
+    const r = run({ exit_code: 1, stderr: "Authentication required. Please run 'agent login'." });
+    expect(runFailed(r)).toBe(true);
+    expect(renderFailure(r)).toContain("(exit 1)");
+    expect(renderFailure(r)).toContain("Authentication required");
+  });
+
+  it("flags empty output with a stderr message even on exit 0", () => {
+    expect(runFailed(run({ exit_code: 0, stdout: "", stderr: "rate limited" }))).toBe(true);
+  });
+
+  it("does not flag a normal successful run", () => {
+    expect(runFailed(run({ exit_code: 0, stdout: "all done" }))).toBe(false);
   });
 });
 

@@ -29,6 +29,19 @@ function capLines(text: string, maxChars: number): string {
   return t.slice(0, maxChars).trimEnd() + " …";
 }
 
+/** Did this agent run fail? A non-zero exit, or no output at all with something
+ *  on stderr (e.g. an auth error or crash the CLI reported but didn't exit on). */
+export function runFailed(run: AgentRun): boolean {
+  return run.exit_code !== 0 || (!run.stdout.trim() && !!run.stderr.trim());
+}
+
+/** A one-line, human-readable description of a failed run. */
+export function renderFailure(run: AgentRun): string {
+  const exit = run.exit_code !== 0 ? ` (exit ${run.exit_code})` : "";
+  const detail = (run.stderr || run.stdout || "").trim().split("\n")[0] ?? "";
+  return `failed${exit}${detail ? `: ${detail.slice(0, 200)}` : ""}`;
+}
+
 /** Render one agent's contribution as readable lines (no raw JSON). */
 export function renderContribution(run: AgentRun, maxChars = 1200): string {
   const findings = asFindingsArray(run.stdout);

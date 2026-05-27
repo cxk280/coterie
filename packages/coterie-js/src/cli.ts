@@ -4,6 +4,7 @@
 import { Command } from "commander";
 import kleur from "kleur";
 
+import { renderFailure, runFailed } from "./chat/render.js";
 import { loadConfig } from "./config.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
 import type { LLMClient } from "./core/llm/base.js";
@@ -55,6 +56,9 @@ async function main() {
       };
       const final: any = await graph.invoke(initial);
       if (final.runs?.length) console.log(final.runs[final.runs.length - 1].stdout);
+      for (const r of final.runs ?? []) {
+        if (runFailed(r)) console.error(kleur.yellow(`⚠ ${r.role} (${r.agent_id}) ${renderFailure(r)}`));
+      }
       console.log(kleur.dim(`total spend ≈ $${(final.spend_usd ?? 0).toFixed(4)}`));
       console.log(kleur.bold(`— ${final.status} —`));
       process.exit(final.status === "done" ? 0 : 1);
@@ -90,6 +94,8 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e);
+  // Friendly one-line errors for a CLI; full stack only when DEBUG is set.
+  console.error(kleur.red(e instanceof Error ? e.message : String(e)));
+  if (process.env.DEBUG && e instanceof Error) console.error(e.stack);
   process.exit(1);
 });

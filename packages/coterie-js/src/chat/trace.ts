@@ -6,7 +6,7 @@
 import kleur from "kleur";
 
 import type { AgentRun, JudgeDecision } from "../core/state.js";
-import { renderContribution } from "./render.js";
+import { renderContribution, renderFailure, runFailed } from "./render.js";
 
 function indent(text: string, pad = "      "): string {
   return text
@@ -27,17 +27,22 @@ export class Trace {
   }
 
   /** Emit a header + the rendered contribution for each new agent run, and each
-   *  new judge verdict, in the latest snapshot. */
+   *  new judge verdict. Agent *failures* surface even when the trace is hidden —
+   *  a silent failure is worse than a noisy one. */
   update(state: { runs?: AgentRun[]; judge_history?: JudgeDecision[] }): void {
-    if (!this.visible) return;
     const runs = state.runs ?? [];
     while (this.seenRuns < runs.length) {
       const r = runs[this.seenRuns++];
       if (!r) continue;
-      const cost = r.cost_estimate_usd != null ? ` · $${r.cost_estimate_usd.toFixed(4)}` : "";
-      console.log(kleur.dim(`  · ${r.role} (${r.agent_id})${cost}`));
-      console.log(kleur.dim(indent(renderContribution(r))));
+      if (runFailed(r)) {
+        console.warn(kleur.yellow(`  ⚠ ${r.role} (${r.agent_id}) ${renderFailure(r)}`));
+      } else if (this.visible) {
+        const cost = r.cost_estimate_usd != null ? ` · $${r.cost_estimate_usd.toFixed(4)}` : "";
+        console.log(kleur.dim(`  · ${r.role} (${r.agent_id})${cost}`));
+        console.log(kleur.dim(indent(renderContribution(r))));
+      }
     }
+    if (!this.visible) return;
     const judges = state.judge_history ?? [];
     while (this.seenJudge < judges.length) {
       const j = judges[this.seenJudge++];
@@ -46,9 +51,13 @@ export class Trace {
     }
   }
 
-  /** Log the finalizer step — the answer prints separately, so show only what it
-   *  changed in the workdir. */
+  /** Log the finalizer step. A finalizer failure is surfaced always (it's the
+   *  source of the answer and the edits); a success line only when visible. */
   finalizer(run: AgentRun): void {
+    if (runFailed(run)) {
+      console.warn(kleur.yellow(`  ⚠ finalizer (${run.agent_id}) ${renderFailure(run)}`));
+      return;
+    }
     if (!this.visible) return;
     const cost = run.cost_estimate_usd != null ? ` · $${run.cost_estimate_usd.toFixed(4)}` : "";
     const changed = run.files_changed?.length
