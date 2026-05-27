@@ -84,6 +84,7 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
       result = await opts.executor.execute(adapter, prompt, opts.workdir, {
         timeoutMs: (agentCfg.timeout_s ?? 600) * 1000,
         signal: config?.signal,
+        onStream: (text) => progress.step({ agent_id: resolvedId, role: opts.role, text }),
       });
     } catch (e: any) {
       // Cancellation propagates (the REPL handles it); any other execution error

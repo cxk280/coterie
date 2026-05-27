@@ -63,6 +63,14 @@ export abstract class CLIAdapter {
     exitCode: number,
   ): AdapterResult;
 
+  /** Turn one line of the CLI's streaming (NDJSON) output into a short, human
+   *  -readable progress note (e.g. "→ Read foo.ts", "→ $ npm test"), or null to
+   *  ignore it. Adapters that run in a streaming format override this; the
+   *  default (no streaming) yields nothing. */
+  streamEvent(_line: string): string | null {
+    return null;
+  }
+
   /** Run the agent CLI asynchronously. Async (vs the old `spawnSync`) is what
    *  keeps Node's event loop free during a turn — so the chat trace can stream
    *  live, SIGINT is handled, and fan-out agents run concurrently. Honors a
@@ -70,7 +78,12 @@ export abstract class CLIAdapter {
   async run(
     prompt: string,
     workdir: string,
-    opts: { timeoutMs?: number; extra?: Record<string, unknown>; signal?: AbortSignal } = {},
+    opts: {
+      timeoutMs?: number;
+      extra?: Record<string, unknown>;
+      signal?: AbortSignal;
+      onStream?: (text: string) => void;
+    } = {},
   ): Promise<AdapterResult> {
     const argv = this.buildCommand(prompt, workdir, opts.extra ?? {});
     const [cmd, ...args] = argv;
@@ -89,7 +102,7 @@ export abstract class CLIAdapter {
     cmd: string,
     args: string[],
     workdir: string,
-    opts: { timeoutMs?: number; signal?: AbortSignal },
+    opts: { timeoutMs?: number; signal?: AbortSignal; onStream?: (text: string) => void },
   ): Promise<{ stdout: string; stderr: string; code: number }> {
     return new Promise((resolve, reject) => {
       if (opts.signal?.aborted) return reject(abortError());
@@ -105,8 +118,25 @@ export abstract class CLIAdapter {
       let stdout = "";
       let stderr = "";
       const cap = 32 * 1024 * 1024;
+      // Buffer stdout into whole lines so each NDJSON event can be turned into a
+      // live progress note as it streams (without blocking — the loop is free).
+      let lineBuf = "";
       child.stdout?.on("data", (d) => {
-        if (stdout.length < cap) stdout += d.toString();
+        const s = d.toString();
+        if (stdout.length < cap) stdout += s;
+        if (!opts.onStream) return;
+        lineBuf += s;
+        let nl: number;
+        while ((nl = lineBuf.indexOf("\n")) >= 0) {
+          const line = lineBuf.slice(0, nl);
+          lineBuf = lineBuf.slice(nl + 1);
+          try {
+            const note = this.streamEvent(line);
+            if (note) opts.onStream(note);
+          } catch {
+            // a malformed line must never break the run
+          }
+        }
       });
       child.stderr?.on("data", (d) => {
         if (stderr.length < cap) stderr += d.toString();

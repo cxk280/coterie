@@ -16,6 +16,8 @@ import type { AdapterResult, CLIAdapter } from "../adapters/base.js";
 export interface ExecuteOpts {
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Called with a short progress note for each streamed event from the agent. */
+  onStream?: (text: string) => void;
 }
 
 /** Whether `workdir` is a git repo with ≥1 commit — the precondition for isolated

@@ -8,7 +8,7 @@
 
 import kleur from "kleur";
 
-import { progress, type AgentDoneEvent, type AgentStartEvent } from "../core/progress.js";
+import { progress, type AgentDoneEvent, type AgentStartEvent, type AgentStepEvent } from "../core/progress.js";
 import type { AgentRun, JudgeDecision } from "../core/state.js";
 import { renderContribution, renderFailure, runFailed } from "./render.js";
 
@@ -67,6 +67,7 @@ export class Trace {
   private seenJudge = 0;
   private onStart?: (ev: AgentStartEvent) => void;
   private onDone?: (ev: AgentDoneEvent) => void;
+  private onStep?: (ev: AgentStepEvent) => void;
 
   constructor(public visible: boolean) {}
 
@@ -78,13 +79,20 @@ export class Trace {
       const { glyph, color, label } = roleStyle(ev.role);
       console.log(`  ${color(glyph)} ${color(label)} ${kleur.dim(`· ${ev.agent_id}`)} ${kleur.dim().italic("· working…")}`);
     };
+    // Live activity from inside a run (tool calls, commands, edits). Tagged with
+    // the agent id so concurrent agents (consensus/tournament) stay legible.
+    this.onStep = (ev) => {
+      if (this.visible) console.log(kleur.dim(`      ${ev.agent_id} ${ev.text}`));
+    };
     this.onDone = ({ run }) => this.renderRun(run);
     progress.on("start", this.onStart);
+    progress.on("step", this.onStep);
     progress.on("done", this.onDone);
   }
 
   detach(): void {
     if (this.onStart) progress.off("start", this.onStart);
+    if (this.onStep) progress.off("step", this.onStep);
     if (this.onDone) progress.off("done", this.onDone);
   }
 

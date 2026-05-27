@@ -50,6 +50,7 @@ export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: strin
   const result = await executor.execute(adapter, prompt, opts.workdir, {
     timeoutMs: 600_000,
     signal: opts.signal,
+    onStream: (text) => progress.step({ agent_id: adapter.agent_id, role: "finalizer", text }),
   });
   const run: AgentRun = {
     agent_id: adapter.agent_id,
