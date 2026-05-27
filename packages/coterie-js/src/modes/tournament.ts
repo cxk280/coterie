@@ -2,7 +2,7 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 
 import type { AdapterExecutor } from "../core/executor.js";
 import { CoterieStateAnnotation } from "../core/annotation.js";
-import { compileWithInterrupts } from "../core/compile.js";
+import { compileGraph } from "../core/compile.js";
 import { registerMode } from "../core/registry.js";
 import type { CoterieState } from "../core/state.js";
 import type { ModeBuildOpts } from "../core/types.js";
@@ -53,7 +53,7 @@ export function build(opts: ModeBuildOpts) {
     g = g.addEdge("bracket_judge", END);
   }
 
-  return compileWithInterrupts(g, config);
+  return compileGraph(g, config);
 }
 
 registerMode("tournament", build);

@@ -224,6 +224,18 @@ async function runTurn(
       trace.update(state);
     }
 
+    // Don't apply edits off a deliberation that halted (budget) or is waiting on
+    // a human — the finalizer is the sole mutator, so skipping it leaves the
+    // workdir untouched.
+    if (final.status === "failed" || final.status === "awaiting_human") {
+      console.log(
+        kleur.yellow(`\n  ⚠ deliberation ended as '${final.status}' — not applying any edits this turn.`),
+      );
+      transcript.add("user", text);
+      transcript.add("assistant", `(no changes — deliberation ended as ${final.status})`);
+      return;
+    }
+
     if (trace.visible) console.log("\n" + rule("finalizing"));
     // The finalizer (the judge seat) is the first available agent. Only pass a
     // model when it's Claude Code — the judge-model aliases are Claude-specific.

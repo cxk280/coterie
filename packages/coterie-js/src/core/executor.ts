@@ -86,7 +86,7 @@ export class IsolatedWorktreeExecutor implements AdapterExecutor {
   }
 
   private cleanup(isolated: string, base: string): void {
-    spawnSync("git", ["worktree", "remove", "--force", isolated], {
+    const removed = spawnSync("git", ["worktree", "remove", "--force", isolated], {
       cwd: base,
       encoding: "utf8",
     });
@@ -94,6 +94,11 @@ export class IsolatedWorktreeExecutor implements AdapterExecutor {
       rmSync(isolated, { recursive: true, force: true });
     } catch {
       // best-effort
+    }
+    // If `git worktree remove` failed, the .git/worktrees entry would linger and
+    // accumulate over a session — prune the now-deleted dir's stale registration.
+    if (removed.status !== 0) {
+      spawnSync("git", ["worktree", "prune"], { cwd: base, encoding: "utf8" });
     }
   }
 }

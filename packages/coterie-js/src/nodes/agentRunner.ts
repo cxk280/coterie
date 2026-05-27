@@ -11,6 +11,12 @@ function instantiate(agentCfg: any): CLIAdapter {
   return new ctor(agentCfg.id, { model: agentCfg.model });
 }
 
+// NOTE on budget scope (audit #9/#10): per-task USD budgets only bind *metered*
+// usage. On the default subscription setup, codex/cursor report null cost and
+// claude reports an estimate, so `spend_usd` is advisory, not a real bill. The
+// check is also pre-run, so a parallel fan-out round (consensus/tournament) can
+// complete before a cap applies. This is acceptable while the product is
+// $0-metered; a true budget gate belongs with the (roadmap) pay-as-you-go path.
 function checkBudget(state: CoterieState): { mode_state?: any; status?: any } | null {
   const budget = (state.config?.budget ?? {}) as Record<string, any>;
   const spent = state.spend_usd ?? 0;
@@ -73,10 +79,26 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
       : (state.plan ?? [state.task])[state.current_step_idx ?? 0] ?? state.task;
 
     progress.start({ agent_id: resolvedId, role: opts.role });
-    const result = await opts.executor.execute(adapter, prompt, opts.workdir, {
-      timeoutMs: (agentCfg.timeout_s ?? 600) * 1000,
-      signal: config?.signal,
-    });
+    let result;
+    try {
+      result = await opts.executor.execute(adapter, prompt, opts.workdir, {
+        timeoutMs: (agentCfg.timeout_s ?? 600) * 1000,
+        signal: config?.signal,
+      });
+    } catch (e: any) {
+      // Cancellation propagates (the REPL handles it); any other execution error
+      // (missing binary, spawn failure, timeout kill) becomes a *recorded* failed
+      // run so the round degrades around it instead of crashing the whole turn.
+      if (e?.name === "AbortError" || config?.signal?.aborted) throw e;
+      result = {
+        stdout: "",
+        stderr: e instanceof Error ? e.message : String(e),
+        exit_code: 1,
+        files_changed: [],
+        duration_s: 0,
+        cost_estimate_usd: null,
+      };
+    }
 
     const run = {
       agent_id: resolvedId,
