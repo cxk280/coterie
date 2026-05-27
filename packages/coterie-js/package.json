@@ -30,7 +30,7 @@
     }
   },
   "bin": {
-    "coterie": "./dist/cli.js"
+    "coterie": "dist/cli.js"
   },
   "files": [
     "dist",
