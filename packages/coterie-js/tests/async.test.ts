@@ -36,9 +36,8 @@ describe("async adapter execution + cancellation", () => {
     expect(Date.now() - t0).toBeLessThan(2000);
   });
 
-  it("kills the child and surfaces a non-zero exit on timeout", async () => {
-    const r = await new SleepAdapter("x").run("p", ".", { timeoutMs: 150 });
-    expect(r.exit_code).not.toBe(0);
+  it("kills the child and rejects with a timeout error on timeout", async () => {
+    await expect(new SleepAdapter("x").run("p", ".", { timeoutMs: 150 })).rejects.toThrow(/timed out/i);
   });
 });
 

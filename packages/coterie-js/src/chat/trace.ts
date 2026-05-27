@@ -20,24 +20,31 @@ interface RoleStyle {
   label: string;
 }
 
-/** A consistent glyph + color per role so the eye can follow who's speaking. */
-function roleStyle(role: string): RoleStyle {
-  switch (role) {
-    case "auditor":
-    case "con":
-      return { glyph: "◆", color: kleur.yellow, label: role };
-    case "judge":
-    case "moderator":
-      return { glyph: "⚖", color: kleur.magenta, label: role };
-    case "finalizer":
-      return { glyph: "✦", color: kleur.green, label: "finalizer" };
-    case "consensus-participant":
-      return { glyph: "◆", color: kleur.cyan, label: "participant" };
-    case "tournament-participant":
-      return { glyph: "◆", color: kleur.cyan, label: "contender" };
-    default: // implementer, pro, agent, single, …
-      return { glyph: "◆", color: kleur.cyan, label: role };
+// A bright, distinct color per agent so each one is easy to follow in a round.
+// Assigned in first-seen order and stable for the session.
+const AGENT_PALETTE: Colorize[] = [kleur.cyan, kleur.green, kleur.yellow, kleur.magenta, kleur.blue, kleur.red];
+const agentColors = new Map<string, Colorize>();
+function agentColor(agentId: string): Colorize {
+  let c = agentColors.get(agentId);
+  if (!c) {
+    c = AGENT_PALETTE[agentColors.size % AGENT_PALETTE.length]!;
+    agentColors.set(agentId, c);
   }
+  return c;
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  "consensus-participant": "participant",
+  "tournament-participant": "contender",
+};
+
+/** Glyph + color + label for a line. Coordination roles (judge/moderator) and the
+ *  finalizer get fixed colors; every actual agent gets its own palette color so
+ *  the three agents in a round are visually distinct. */
+function roleStyle(role: string, agentId: string): RoleStyle {
+  if (role === "finalizer") return { glyph: "✦", color: kleur.green, label: "finalizer" };
+  if (role === "judge" || role === "moderator") return { glyph: "⚖", color: kleur.magenta, label: role };
+  return { glyph: "◆", color: agentColor(agentId), label: ROLE_LABELS[role] ?? role };
 }
 
 function meta(run: AgentRun): string {
@@ -47,12 +54,14 @@ function meta(run: AgentRun): string {
   return bits.length ? kleur.dim(`  ${bits.join(" · ")}`) : "";
 }
 
-/** Prefix every content line with a soft gutter bar so a block reads as one unit. */
-function block(text: string): string {
-  const bar = kleur.dim("│");
+/** Prefix each content line with a colored gutter bar so a block reads as one
+ *  unit, attributed to its agent. Content stays the terminal's default color
+ *  (bright/legible) rather than dimmed. */
+function block(text: string, gutter: Colorize): string {
+  const bar = gutter("│");
   return text
     .split("\n")
-    .map((l) => `    ${bar} ${kleur.dim(l)}`)
+    .map((l) => `    ${bar} ${l}`)
     .join("\n");
 }
 
@@ -76,13 +85,13 @@ export class Trace {
   attach(): void {
     this.onStart = (ev) => {
       if (!this.visible) return;
-      const { glyph, color, label } = roleStyle(ev.role);
-      console.log(`  ${color(glyph)} ${color(label)} ${kleur.dim(`· ${ev.agent_id}`)} ${kleur.dim().italic("· working…")}`);
+      const { glyph, color, label } = roleStyle(ev.role, ev.agent_id);
+      console.log(`  ${color(glyph)} ${kleur.bold(color(label))} ${kleur.dim(`· ${ev.agent_id}`)} ${kleur.dim().italic("· working…")}`);
     };
-    // Live activity from inside a run (tool calls, commands, edits). Tagged with
-    // the agent id so concurrent agents (consensus/tournament) stay legible.
+    // Live activity from inside a run (tool calls, commands, edits), in the agent's
+    // own color so concurrent agents (consensus/tournament) stay legible.
     this.onStep = (ev) => {
-      if (this.visible) console.log(kleur.dim(`      ${ev.agent_id} ${ev.text}`));
+      if (this.visible) console.log(`      ${kleur.dim(ev.agent_id)} ${agentColor(ev.agent_id)(ev.text)}`);
     };
     this.onDone = ({ run }) => this.renderRun(run);
     progress.on("start", this.onStart);
@@ -101,9 +110,9 @@ export class Trace {
   }
 
   private renderRun(run: AgentRun): void {
-    const { glyph, color, label } = roleStyle(run.role);
+    const { glyph, color, label } = roleStyle(run.role, run.agent_id);
     if (runFailed(run)) {
-      console.warn(`  ${kleur.yellow("✗")} ${kleur.yellow(label)} ${kleur.dim(`· ${run.agent_id}`)} ${kleur.yellow(renderFailure(run))}`);
+      console.warn(`  ${kleur.yellow("✗")} ${kleur.bold().yellow(label)} ${kleur.dim(`· ${run.agent_id}`)} ${kleur.yellow(renderFailure(run))}`);
       return;
     }
     if (!this.visible) return;
@@ -113,7 +122,7 @@ export class Trace {
       return;
     }
     console.log(`  ${color(glyph)} ${kleur.bold(color(label))} ${kleur.dim(`· ${run.agent_id}`)}${meta(run)}`);
-    console.log(block(renderContribution(run, 800)));
+    console.log(block(renderContribution(run, 800), color));
   }
 
   /** Surface new judge verdicts from a streamed state snapshot. */
@@ -123,8 +132,8 @@ export class Trace {
     while (this.seenJudge < judges.length) {
       const j = judges[this.seenJudge++];
       if (!j) continue;
-      console.log(`  ${kleur.magenta("⚖")} ${kleur.magenta().bold("judge")} ${kleur.dim("→")} ${kleur.bold(j.winner)}`);
-      if (j.reason) console.log(block(j.reason));
+      console.log(`  ${kleur.magenta("⚖")} ${kleur.magenta().bold("judge")} ${kleur.dim("→")} ${kleur.bold().magenta(j.winner)}`);
+      if (j.reason) console.log(block(j.reason, kleur.magenta));
     }
   }
 }

@@ -2,6 +2,8 @@
 
 import { spawn, spawnSync } from "node:child_process";
 
+import { sleepAwareTimeout } from "../core/timeout.js";
+
 export interface AdapterResult {
   stdout: string;
   stderr: string;
@@ -151,8 +153,14 @@ export abstract class CLIAdapter {
         setTimeout(hardKill, 2_000).unref();
       };
 
-      const timer = setTimeout(kill, opts.timeoutMs ?? 600_000);
-      timer.unref();
+      const timeoutMs = opts.timeoutMs ?? 600_000;
+      let timedOut = false;
+      // Sleep-aware: a wall-clock timer would kill a merely-suspended child the
+      // instant the machine wakes. This only counts active time.
+      const clearTimer = sleepAwareTimeout(timeoutMs, () => {
+        timedOut = true;
+        kill();
+      });
 
       const onAbort = () => {
         kill();
@@ -162,7 +170,7 @@ export abstract class CLIAdapter {
       opts.signal?.addEventListener("abort", onAbort, { once: true });
 
       const cleanup = () => {
-        clearTimeout(timer);
+        clearTimer();
         opts.signal?.removeEventListener("abort", onAbort);
       };
 
@@ -172,7 +180,8 @@ export abstract class CLIAdapter {
       });
       child.on("close", (code) => {
         cleanup();
-        resolve({ stdout, stderr, code: code ?? 1 });
+        if (timedOut) reject(new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`));
+        else resolve({ stdout, stderr, code: code ?? 1 });
       });
     });
   }
