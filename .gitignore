@@ -36,9 +36,6 @@ dist/
 .coterie-checkpoints/
 *.coterie.log
 
-# Local persona-testing notes (not shipped)
-USER_PERSONA_FINDINGS.md
-
 # Secrets
 .env
 .env.local
