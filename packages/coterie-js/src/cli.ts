@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 /** Composition root. Picks LLM provider per role + executor. */
 
+import { setMaxListeners } from "node:events";
+
 import { Command } from "commander";
 import kleur from "kleur";
+
+// A turn aborts via one AbortSignal that LangGraph fans out to per-step derived
+// signals; raise the default ceiling for all newly-created EventTargets so a
+// multi-round turn never trips Node's MaxListenersExceededWarning.
+setMaxListeners(64);
 
 import { formatProblems, preflight } from "./chat/preflight.js";
 import { renderFailure, runFailed } from "./chat/render.js";
