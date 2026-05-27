@@ -1,3 +1,4 @@
+import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 import { parseFindings } from "./auditor.js";
@@ -22,7 +23,9 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
     const cfg = state.config;
     const consCfg = cfg.consensus ?? {};
     const engineCfg = consCfg.engine ?? {};
-    const threshold = engineCfg.confirm_threshold ?? 0.5;
+    // `consensus.threshold` is the documented key; `engine.confirm_threshold` is
+    // an older alias. Honor either (threshold wins) before falling back.
+    const threshold = consCfg.threshold ?? engineCfg.confirm_threshold ?? 0.5;
     const participants = (consCfg.participants ?? (cfg.agents as any[]).map((a: any) => a.id)) as string[];
     const n = participants.length;
 
@@ -56,11 +59,10 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
       const raw = await llm.chat(ENGINE_SYSTEM, [
         { role: "user", content: `Cluster these findings:\n${JSON.stringify(flat)}` },
       ]);
-      try {
-        const parsed = JSON.parse(raw.trim().replace(/^`+|`+$/g, ""));
-        if (!Array.isArray(parsed)) throw new Error("not a list");
+      const parsed = parseJsonLoose(raw);
+      if (Array.isArray(parsed)) {
         clusters = parsed;
-      } catch {
+      } else {
         clusters = flat.map((f, i) => ({
           description: f.description,
           category: f.category ?? "unknown",
@@ -72,7 +74,11 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
     }
 
     const consensus = clusters.map((c) => {
-      const supporters = [...new Set<string>(c.supporting_agents ?? [])];
+      // Intersect with the real participant set: a hallucinated/duplicate agent id
+      // must not inflate agreement (ratio could otherwise exceed 1.0).
+      const supporters = [...new Set<string>(c.supporting_agents ?? [])].filter((s) =>
+        participants.includes(s),
+      );
       const ratio = supporters.length / Math.max(n, 1);
       const label =
         supporters.length <= 1 ? "unverified" : ratio >= threshold ? "confirmed" : "needs-verification";
@@ -82,6 +88,7 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
         severity: c.severity ?? "low",
         agreement_count: supporters.length,
         agreement_ratio: ratio,
+        participant_count: n,
         label,
         supporting_agents: supporters,
       };

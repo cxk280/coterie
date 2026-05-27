@@ -5,7 +5,7 @@
  *
  *  Preflight failures exit before the REPL opens, so these need no stdin. */
 
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,6 +16,16 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, "..");
 const cli = join(pkgRoot, "dist", "cli.js");
+
+// `git` must resolve for chat's worktree-readiness check, but the sandbox PATH is
+// otherwise restricted to the stub agents. Include just git's own directory.
+const GIT_BIN_DIR = (() => {
+  try {
+    return dirname(execSync("command -v git", { encoding: "utf8", shell: "/bin/sh" }).trim());
+  } catch {
+    return "/usr/bin";
+  }
+})();
 
 function runCli(args: string[], env: NodeJS.ProcessEnv, input = ""): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env, input, timeout: 30_000 });
@@ -60,7 +70,7 @@ function sandboxEnv(present: string[], signedOut: string[] = []): NodeJS.Process
       writeFileSync(join(home, ".codex", "auth.json"), "{}");
     }
   }
-  return { PATH: bin, HOME: home };
+  return { PATH: `${bin}:${GIT_BIN_DIR}`, HOME: home };
 }
 
 /** All subsets of `items` (the powerset), for an exhaustive presence matrix. */

@@ -48,4 +48,16 @@ describe("loadConfig validates against the bundled schema", () => {
       /Config file not found: \/tmp\/coterie-does-not-exist-12345\.yaml/,
     );
   });
+
+  it("reports malformed YAML clearly instead of a raw library error", () => {
+    expect(() => loadConfig(writeConfig("mode: single\n  bad: : :\n"))).toThrow(/Invalid YAML/);
+  });
+
+  it("rejects an empty config file", () => {
+    expect(() => loadConfig(writeConfig(""))).toThrow(/empty/i);
+  });
+
+  it("rejects a top-level non-mapping (e.g. a bare list)", () => {
+    expect(() => loadConfig(writeConfig("- a\n- b\n"))).toThrow(/Invalid config/);
+  });
 });

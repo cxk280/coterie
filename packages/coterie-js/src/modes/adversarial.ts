@@ -1,7 +1,7 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";
-import { compileWithInterrupts } from "../core/compile.js";
+import { compileGraph } from "../core/compile.js";
 import { registerMode } from "../core/registry.js";
 import type { ModeBuildOpts } from "../core/types.js";
 import { makeAgentRunner } from "../nodes/agentRunner.js";
@@ -57,7 +57,7 @@ export function build(opts: ModeBuildOpts) {
       { [END]: END, implementer: "implementer" },
     );
 
-  return compileWithInterrupts(g, config);
+  return compileGraph(g, config);
 }
 
 registerMode("adversarial", build);

@@ -24,7 +24,7 @@
           "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
           "adapter": {
             "type": "string",
-            "enum": ["claude-code", "codex", "cursor", "aider", "shell", "fake"]
+            "enum": ["claude-code", "codex", "cursor", "fake"]
           },
           "command": {"type": "array", "items": {"type": "string"}},
           "model": {"type": "string"},
@@ -83,6 +83,14 @@
           "items": {"type": "string"},
           "minItems": 2
         },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.5,
+          "description": "Agreement ratio at which a clustered finding is 'confirmed'."
+        },
+        "max_rounds": {"type": "integer", "minimum": 1, "default": 1},
         "engine": {
           "type": "object",
           "additionalProperties": false,
@@ -178,10 +186,6 @@
         }
       }
     },
-    "checkpoints": {
-      "type": "object",
-      "additionalProperties": {"type": "boolean"}
-    },
     "budget": {
       "type": "object",
       "additionalProperties": false,
@@ -193,34 +197,6 @@
           "enum": ["halt", "warn", "checkpoint"],
           "default": "checkpoint"
         }
-      }
-    },
-    "tools": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "kind"],
-        "additionalProperties": false,
-        "properties": {
-          "id": {"type": "string"},
-          "kind": {
-            "type": "string",
-            "enum": ["pytest", "vitest", "ruff", "eslint", "git", "shell"]
-          },
-          "args": {"type": "array", "items": {"type": "string"}}
-        }
-      }
-    },
-    "observability": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "provider": {
-          "type": "string",
-          "enum": ["none", "langfuse", "langsmith", "file"],
-          "default": "file"
-        },
-        "log_dir": {"type": "string", "default": ".coterie/logs"}
       }
     },
     "workdir": {"type": "string", "default": "."}

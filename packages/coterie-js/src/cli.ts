@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 /** Composition root. Picks LLM provider per role + executor. */
 
+import { setMaxListeners } from "node:events";
+
 import { Command } from "commander";
 import kleur from "kleur";
 
+// A turn aborts via one AbortSignal that LangGraph fans out to per-step derived
+// signals; raise the default ceiling for all newly-created EventTargets so a
+// multi-round turn never trips Node's MaxListenersExceededWarning.
+setMaxListeners(64);
+
+import { formatProblems, preflight } from "./chat/preflight.js";
 import { renderFailure, runFailed } from "./chat/render.js";
 import { loadConfig } from "./config.js";
 import { progress } from "./core/progress.js";
+import { validateRuntimeConfig } from "./core/validate.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
 import type { LLMClient } from "./core/llm/base.js";
 import { buildLLM } from "./core/llm/build.js";
@@ -19,6 +28,12 @@ function buildExecutor(cfg: any): AdapterExecutor {
   const explicit = cfg.executor?.kind;
   if (explicit === "local") return new LocalSubprocessExecutor();
   if (explicit === "isolated") return new IsolatedWorktreeExecutor();
+  if (explicit != null) {
+    console.warn(kleur.yellow(`unknown executor.kind '${explicit}'; using the mode default (local/isolated)`));
+  }
+  // `run` has no separate finalizer, so adversarial/debate use the local executor
+  // on purpose — their edits land in the workdir (that's the point of `run`).
+  // The parallel many-agent modes isolate to avoid clobbering each other.
   if (cfg.mode === "consensus" || cfg.mode === "tournament") return new IsolatedWorktreeExecutor();
   return new LocalSubprocessExecutor();
 }
@@ -39,6 +54,16 @@ async function main() {
     .option("--workdir <path>", "Working directory", ".")
     .action(async (task: string, opts: { config: string; workdir: string }) => {
       const cfg = loadConfig(opts.config);
+      validateRuntimeConfig(cfg);
+
+      // Same friendly preflight as chat: surface missing/signed-out agents up
+      // front instead of failing with a raw spawn error deep in the graph.
+      const problems = preflight(cfg);
+      if (problems.length) {
+        console.error(kleur.yellow(formatProblems(problems)));
+        process.exit(1);
+      }
+
       const mode = cfg.mode;
       const executor = buildExecutor(cfg);
 

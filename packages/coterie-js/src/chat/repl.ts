@@ -6,16 +6,17 @@ import { createInterface } from "node:readline";
 
 import kleur from "kleur";
 
-import { IsolatedWorktreeExecutor } from "../core/executor.js";
+import { gitRepoReady, IsolatedWorktreeExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { buildLLM } from "../core/llm/build.js";
-import type { Mode } from "../core/state.js";
+import type { AgentRun, Mode } from "../core/state.js";
+import { validateRuntimeConfig } from "../core/validate.js";
 import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
 import { formatDoctor, MIN_AGENTS, runDoctor } from "./doctor.js";
 import { runFinalizer } from "./finalizer.js";
-import { agentStatuses } from "./preflight.js";
-import { digestRound } from "./render.js";
+import { agentStatuses, checkAgent } from "./preflight.js";
+import { classifyFailure, digestRound } from "./render.js";
 import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
@@ -69,6 +70,21 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     return;
   }
 
+  // Deliberation runs in an isolated git worktree of the workdir, so it must be a
+  // git repo with a commit — otherwise every turn would error mid-flight.
+  const git = gitRepoReady(opts.workdir);
+  if (!git.ok) {
+    console.error(
+      kleur.yellow(
+        `Can't start: ${opts.workdir} is ${git.reason}. coterie runs each turn's deliberation in an ` +
+          "isolated git worktree, so the working directory must be a git repo with at least one commit.\n" +
+          "  Fix: cd into your project and run `git init && git add -A && git commit -m init`.",
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const transcript = new Transcript();
   const trace = new Trace(!opts.quiet);
   trace.attach();
@@ -89,6 +105,19 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
       ),
     );
   }
+  // Coordination (routing / judging / merging) runs on Claude (`claude -p`),
+  // regardless of the agent lineup. If it looks unavailable, warn — turns may
+  // fail — but don't block (the auth check is a heuristic; claude may still work).
+  const coord = checkAgent("claude");
+  if (!coord.ok) {
+    console.log(
+      kleur.yellow(
+        `  ⚠ coordination runs on Claude (\`claude -p\`), which looks ${coord.reason}. ` +
+          "Turns may fail until it's available. If \`claude\` works in your shell, ignore this. " +
+          "(Pluggable coordination providers are on the roadmap.)",
+      ),
+    );
+  }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const setPrompt = () => rl.setPrompt(kleur.cyan(`\ncoterie(${mode})› `));
@@ -96,6 +125,11 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   // Ctrl+C cancels the in-flight turn (aborting the agent subprocesses) and keeps
   // the session alive; at the prompt with nothing running it quits.
   let activeAbort: AbortController | null = null;
+  // Agents that hit a hard limit / auth failure this session, with the reason.
+  // We drop them from later turns when ≥2 agents remain; otherwise we keep them
+  // and bubble up the limit info (you can't coordinate with fewer than two).
+  const sidelined = new Map<string, string>();
+
   rl.on("SIGINT", () => {
     if (activeAbort && !activeAbort.signal.aborted) {
       activeAbort.abort();
@@ -129,12 +163,44 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
         } else console.log(kleur.red(`  unknown command '/${rawCmd ?? ""}' — /help`));
       } else {
+        // Build this turn's lineup: drop sidelined agents, but never below the
+        // two needed to coordinate.
+        let lineup = agents.filter((a) => !sidelined.has(a.id));
+        if (lineup.length < MIN_AGENTS) {
+          for (const a of agents) {
+            if (sidelined.has(a.id)) {
+              console.log(
+                kleur.yellow(
+                  `  ⚠ ${a.id} is unavailable (${sidelined.get(a.id)}) but kept — dropping it would leave fewer than ${MIN_AGENTS} agents.`,
+                ),
+              );
+            }
+          }
+          lineup = agents;
+        } else if (lineup.length < agents.length) {
+          for (const a of agents) {
+            if (sidelined.has(a.id)) console.log(kleur.dim(`  (sitting out ${a.id} this session — ${sidelined.get(a.id)})`));
+          }
+        }
+
         activeAbort = new AbortController();
         // LangGraph attaches an abort listener per step; lift the ceiling so a
         // multi-round turn doesn't trip Node's MaxListenersExceededWarning.
         setMaxListeners(128, activeAbort.signal);
         try {
-          await runTurn(text, mode, opts.workdir, agents, transcript, trace, activeAbort.signal);
+          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, activeAbort.signal);
+          // Learn from failures: sideline agents that hit a limit / auth problem.
+          for (const r of runs ?? []) {
+            const c = classifyFailure(r);
+            if (c.kind && !sidelined.has(r.agent_id)) {
+              sidelined.set(r.agent_id, c.detail || c.kind);
+              console.log(
+                kleur.yellow(
+                  `  ▸ ${r.agent_id} hit a ${c.kind} issue — sitting it out for the rest of this session. ${c.detail}`.trimEnd(),
+                ),
+              );
+            }
+          }
         } finally {
           activeAbort = null;
         }
@@ -158,8 +224,9 @@ async function runTurn(
   transcript: Transcript,
   trace: Trace,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<AgentRun[] | null> {
   const cfg = defaultConfig(mode, agents);
+  validateRuntimeConfig(cfg);
   const llms = await buildLlms(mode, cfg);
   // Deliberation never touches the real workdir — it runs in throwaway worktrees
   // and feeds the finalizer as advice. The finalizer is the sole mutator.
@@ -194,6 +261,18 @@ async function runTurn(
       trace.update(state);
     }
 
+    // Don't apply edits off a deliberation that halted (budget) or is waiting on
+    // a human — the finalizer is the sole mutator, so skipping it leaves the
+    // workdir untouched.
+    if (final.status === "failed" || final.status === "awaiting_human") {
+      console.log(
+        kleur.yellow(`\n  ⚠ deliberation ended as '${final.status}' — not applying any edits this turn.`),
+      );
+      transcript.add("user", text);
+      transcript.add("assistant", `(no changes — deliberation ended as ${final.status})`);
+      return final.runs ?? [];
+    }
+
     if (trace.visible) console.log("\n" + rule("finalizing"));
     // The finalizer (the judge seat) is the first available agent. Only pass a
     // model when it's Claude Code — the judge-model aliases are Claude-specific.
@@ -216,13 +295,14 @@ async function runTurn(
 
     transcript.add("user", text);
     transcript.add("assistant", reply);
+    return [...(final.runs ?? []), run];
   } catch (e) {
     if (signal.aborted || (e instanceof Error && e.name === "AbortError")) {
       console.log(
         kleur.yellow("\n  ↩ canceled — back to the prompt.") +
           kleur.dim(" (Deliberation runs in a scratch copy, so your files are untouched.)"),
       );
-      return;
+      return null;
     }
     throw e;
   }

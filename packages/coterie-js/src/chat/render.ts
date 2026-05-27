@@ -29,10 +29,15 @@ function capLines(text: string, maxChars: number): string {
   return t.slice(0, maxChars).trimEnd() + " …";
 }
 
-/** Did this agent run fail? A non-zero exit, or no output at all with something
- *  on stderr (e.g. an auth error or crash the CLI reported but didn't exit on). */
+/** Did this agent run fail? A non-zero exit always counts. An exit-0 run with no
+ *  stdout but error-looking stderr (auth/rate-limit/crash the CLI reported but
+ *  didn't exit on) counts too — but a benign warning on stderr with no stdout
+ *  (e.g. a deprecation notice from an agent that only edited files) does not. */
+const STDERR_ERROR_RE = /error|fail|denied|unauthor|not logged in|rate.?limit|expired|invalid|quota|ENOENT|timed? ?out/i;
 export function runFailed(run: AgentRun): boolean {
-  return run.exit_code !== 0 || (!run.stdout.trim() && !!run.stderr.trim());
+  if (run.exit_code !== 0) return true;
+  if (!run.stdout.trim() && run.stderr.trim()) return STDERR_ERROR_RE.test(run.stderr);
+  return false;
 }
 
 /** A one-line, human-readable description of a failed run. */
@@ -40,6 +45,29 @@ export function renderFailure(run: AgentRun): string {
   const exit = run.exit_code !== 0 ? ` (exit ${run.exit_code})` : "";
   const detail = (run.stderr || run.stdout || "").trim().split("\n")[0] ?? "";
   return `failed${exit}${detail ? `: ${detail.slice(0, 200)}` : ""}`;
+}
+
+const RATE_LIMIT_RE = /rate.?limit|quota|usage limit|too many requests|\b429\b|resets? (?:at|in)|try again (?:later|in)|exhausted/i;
+const AUTH_RE = /not logged in|unauthor|authentication|please (?:sign|log) ?in|login required|subscription|expired|invalid (?:api )?key|\b401\b|\b403\b/i;
+
+export interface FailureClass {
+  kind: "rate-limit" | "auth" | null;
+  /** A short note to bubble up — includes any "resets at…/try again in…" hint. */
+  detail: string;
+}
+
+/** Classify *why* a run failed so the session can adapt: drop a rate-limited or
+ *  signed-out agent when others remain, or bubble up when/whether it'll recover. */
+export function classifyFailure(run: AgentRun): FailureClass {
+  if (!runFailed(run)) return { kind: null, detail: "" };
+  const text = `${run.stderr}\n${run.stdout}`.trim();
+  const firstLine = text.split("\n").find((l) => l.trim())?.trim().slice(0, 200) ?? "";
+  // Surface a recovery hint if the CLI gave one.
+  const when = text.match(/(?:resets?|try again|retry)[^.\n]*?(?:at|in)\s+[^.\n]{1,40}/i)?.[0];
+  const detail = when ? `${firstLine}${firstLine.includes(when) ? "" : ` — ${when}`}` : firstLine;
+  if (RATE_LIMIT_RE.test(text)) return { kind: "rate-limit", detail };
+  if (AUTH_RE.test(text)) return { kind: "auth", detail };
+  return { kind: null, detail };
 }
 
 /** Render one agent's contribution as readable lines (no raw JSON). */
@@ -73,14 +101,23 @@ export function digestRound(final: CoterieState): string {
 
   const consensus = (final.mode_state?.consensus_findings ?? []) as any[];
   if (consensus.length) {
-    const lines = consensus.map(
-      (c) =>
-        `- [${c.label}] [${c.severity}] ${c.description} (${c.agreement_count}/${
-          c.supporting_agents?.length ?? c.agreement_count
-        } agree)`,
-    );
+    const lines = consensus.map((c) => {
+      // Denominator is the participant total, not the supporter count (which
+      // would always read "N/N"). Fall back to deriving it from the ratio.
+      const total =
+        c.participant_count ??
+        (c.agreement_ratio ? Math.round(c.agreement_count / c.agreement_ratio) : c.agreement_count);
+      return `- [${c.label}] [${c.severity}] ${c.description} (${c.agreement_count}/${total} agree)`;
+    });
     parts.push(`### consensus findings\n${lines.join("\n")}`);
   }
 
-  return parts.join("\n\n") || "(the deliberation produced no output)";
+  // Cap the assembled digest so a many-run round can't hand the finalizer an
+  // unbounded prompt (compounds the argv limit). Per-contribution caps above
+  // bound each piece; this bounds the whole.
+  const digest = parts.join("\n\n") || "(the deliberation produced no output)";
+  const MAX_DIGEST = 12_000;
+  return digest.length > MAX_DIGEST
+    ? digest.slice(0, MAX_DIGEST) + "\n\n…(deliberation digest truncated)…"
+    : digest;
 }

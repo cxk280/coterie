@@ -1,3 +1,4 @@
+import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 
@@ -23,16 +24,23 @@ export function makeSupervisorNode(llm: LLMClient | null) {
     }
     const cfg = state.config;
     const agents = cfg.agents as any[];
+    if (!agents?.length) {
+      throw new Error("supervisor: config has no agents to route to");
+    }
     const subtask = plan[idx];
     const routerCfg = cfg.router ?? {};
     const strategy = routerCfg.strategy ?? "llm";
     const enabled = routerCfg.enabled !== false;
 
-    if (!enabled || strategy === "round-robin") {
+    // round-robin (and disabled) are deterministic. 'manual' has no interactive
+    // selection channel in a headless run, so it falls back to round-robin
+    // deterministically rather than throwing or silently hitting the LLM path.
+    if (!enabled || strategy === "round-robin" || strategy === "manual") {
       const chosen = agents[idx % agents.length];
+      const why = !enabled ? "disabled" : strategy === "manual" ? "manual→round-robin" : "round-robin";
       return {
         next_agent: chosen.id,
-        route_history: [{ step: idx, agent_id: chosen.id, reason: "round-robin", strategy: enabled ? "round-robin" : "disabled" }],
+        route_history: [{ step: idx, agent_id: chosen.id, reason: why, strategy: why }],
         status: "executing" as const,
       };
     }
@@ -41,13 +49,13 @@ export function makeSupervisorNode(llm: LLMClient | null) {
 
     const prompt = `Task: ${state.task}\nSubtask: ${subtask}\n\nAvailable agents:\n${formatAgents(agents)}`;
     const raw = await llm.chat(SUPERVISOR_SYSTEM, [{ role: "user", content: prompt }]);
+    const decision = parseJsonLoose(raw);
     let agentId: string;
     let reason: string;
-    try {
-      const decision = JSON.parse(raw);
+    if (decision && typeof decision.agent_id === "string") {
       agentId = decision.agent_id;
       reason = decision.reason ?? "";
-    } catch {
+    } else {
       agentId = agents[0].id;
       reason = `router output unparseable: ${raw.slice(0, 120)}`;
     }

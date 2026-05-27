@@ -79,6 +79,9 @@ export abstract class CLIAdapter {
     const { stdout, stderr, code } = await this.spawnCollect(cmd, args, workdir, opts);
     const result = this.parseResult(stdout, stderr, code);
     result.duration_s = (Date.now() - t0) / 1000;
+    // Report which files the agent actually touched (so the trace can show
+    // "edited X, Y") unless the adapter already computed it.
+    if (!result.files_changed?.length) result.files_changed = this.gitChangedFiles(workdir);
     return result;
   }
 

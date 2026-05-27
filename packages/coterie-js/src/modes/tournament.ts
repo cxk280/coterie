@@ -2,7 +2,7 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 
 import type { AdapterExecutor } from "../core/executor.js";
 import { CoterieStateAnnotation } from "../core/annotation.js";
-import { compileWithInterrupts } from "../core/compile.js";
+import { compileGraph } from "../core/compile.js";
 import { registerMode } from "../core/registry.js";
 import type { CoterieState } from "../core/state.js";
 import type { ModeBuildOpts } from "../core/types.js";
@@ -22,7 +22,7 @@ function makeEliminatedAwareParticipant(agent_id: string, workdir: string, execu
 export function build(opts: ModeBuildOpts) {
   const { workdir, executor, config, judge_llm } = opts;
   const tournament = config.tournament ?? {};
-  const participants = (tournament.participants ?? []) as string[];
+  const participants = (tournament.participants ?? (config.agents as any[]).map((a) => a.id)) as string[];
   const multiRound = (tournament.rounds ?? 1) > 1;
 
   let g: any = new StateGraph(CoterieStateAnnotation)
@@ -53,7 +53,7 @@ export function build(opts: ModeBuildOpts) {
     g = g.addEdge("bracket_judge", END);
   }
 
-  return compileWithInterrupts(g, config);
+  return compileGraph(g, config);
 }
 
 registerMode("tournament", build);

@@ -1,17 +1,9 @@
-/** Shared graph compilation. Mirrors Python `core/compile.py`. */
+/** Shared graph compilation. */
 
-import { MemorySaver } from "@langchain/langgraph";
-
-export function compileWithInterrupts(builder: any, config: Record<string, any>): any {
-  const cps = (config.checkpoints ?? {}) as Record<string, boolean>;
-  const interrupts = Object.entries(cps)
-    .filter(([, enabled]) => enabled)
-    .map(([name]) => name);
-  if (interrupts.length === 0) {
-    return builder.compile();
-  }
-  return builder.compile({
-    checkpointer: new MemorySaver(),
-    interruptBefore: interrupts,
-  });
+// NOTE: the prior checkpointer + interruptBefore path (audit #23) was removed —
+// it required a `configurable.thread_id` at stream/invoke time (never passed) and
+// there was no resume path, so the interrupt/`awaiting_human` flow was unusable.
+// Budget halts now surface as a terminal status instead (the finalizer is skipped).
+export function compileGraph(builder: any, _config: Record<string, any>): any {
+  return builder.compile();
 }
