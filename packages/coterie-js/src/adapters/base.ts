@@ -122,7 +122,11 @@ export abstract class CLIAdapter {
       const cap = 32 * 1024 * 1024;
       // Buffer stdout into whole lines so each NDJSON event can be turned into a
       // live progress note as it streams (without blocking — the loop is free).
+      const lineCap = 1024 * 1024;
       let lineBuf = "";
+      // True while we're discarding an over-cap, not-yet-terminated line; reset
+      // at the next newline so streaming resyncs on the following whole line.
+      let lineOverflow = false;
       child.stdout?.on("data", (d) => {
         const s = d.toString();
         if (stdout.length < cap) stdout += s;
@@ -132,12 +136,25 @@ export abstract class CLIAdapter {
         while ((nl = lineBuf.indexOf("\n")) >= 0) {
           const line = lineBuf.slice(0, nl);
           lineBuf = lineBuf.slice(nl + 1);
+          if (lineOverflow) {
+            // This newline closes the dropped line; resume on the next one.
+            lineOverflow = false;
+            continue;
+          }
           try {
             const note = this.streamEvent(line);
             if (note) opts.onStream(note);
           } catch {
             // a malformed line must never break the run
           }
+        }
+        // Bound the partial-line buffer: a producer that emits a multi-megabyte
+        // single line (or never a newline) must not grow it without limit — the
+        // authoritative `stdout` is capped, and progress notes are best-effort,
+        // so drop the partial line and resync at the next newline.
+        if (lineBuf.length > lineCap) {
+          lineBuf = "";
+          lineOverflow = true;
         }
       });
       child.stderr?.on("data", (d) => {

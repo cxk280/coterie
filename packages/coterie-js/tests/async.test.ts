@@ -20,7 +20,32 @@ class SleepAdapter extends CLIAdapter {
   }
 }
 
+/** Writes a 4 MiB line with NO newline (to stress the streaming line buffer),
+ *  then a newline and a short whole line. Exits only AFTER the write flushes (via
+ *  the write callback) — a bare process.exit(0) would truncate the piped output. */
+class FloodAdapter extends CLIAdapter {
+  static readonly adapterName = "flood-test";
+  buildCommand(): string[] {
+    return ["node", "-e", 'process.stdout.write("x".repeat(4*1024*1024)+"\\nSHORT\\n", () => process.exit(0))'];
+  }
+  parseResult(stdout: string, stderr: string, exit_code: number): AdapterResult {
+    return { stdout, stderr, exit_code, files_changed: [], duration_s: 0, cost_estimate_usd: null };
+  }
+  streamEvent(line: string): string | null {
+    return line === "SHORT" ? "→ short" : null;
+  }
+}
+
 describe("async adapter execution + cancellation", () => {
+  it("bounds the streaming line buffer and resyncs at the next newline", async () => {
+    const notes: string[] = [];
+    const r = await new FloodAdapter("x").run("p", ".", { onStream: (t) => notes.push(t) });
+    expect(r.exit_code).toBe(0);
+    // The over-cap unterminated line is dropped, but streaming recovers and the
+    // following whole line still produces its note.
+    expect(notes).toEqual(["→ short"]);
+  });
+
   it("rejects immediately when the signal is already aborted", async () => {
     const ac = new AbortController();
     ac.abort();
