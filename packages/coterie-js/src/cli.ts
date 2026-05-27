@@ -2,6 +2,9 @@
 /** Composition root. Picks LLM provider per role + executor. */
 
 import { setMaxListeners } from "node:events";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 import kleur from "kleur";
@@ -10,6 +13,12 @@ import kleur from "kleur";
 // signals; raise the default ceiling for all newly-created EventTargets so a
 // multi-round turn never trips Node's MaxListenersExceededWarning.
 setMaxListeners(64);
+
+// Read --version from package.json at runtime so it can never drift from the
+// published version (dist/cli.js → ../package.json).
+const VERSION = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version as string;
 
 import { formatProblems, preflight } from "./chat/preflight.js";
 import { renderFailure, runFailed } from "./chat/render.js";
@@ -43,7 +52,7 @@ async function main() {
   program
     .name("coterie")
     .description("Chat with a team of AI coding agents that collaborate on each task — in your terminal.")
-    .version("0.1.0")
+    .version(VERSION)
     .showHelpAfterError("(run `coterie --help` to see the available commands)");
 
   program

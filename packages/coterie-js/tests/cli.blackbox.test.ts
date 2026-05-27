@@ -6,7 +6,7 @@
  *  Preflight failures exit before the REPL opens, so these need no stdin. */
 
 import { execSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,10 +90,11 @@ describe("coterie CLI (black-box)", () => {
     }
   }, 120_000);
 
-  it("--version prints the version", () => {
+  it("--version prints the package.json version (not a stale hardcoded one)", () => {
     const r = runCli(["--version"], { PATH: process.env.PATH });
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("0.1.0");
+    const pkgVersion = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version;
+    expect(r.stdout.trim()).toBe(pkgVersion);
   });
 
   it("--help lists the chat and run commands", () => {
