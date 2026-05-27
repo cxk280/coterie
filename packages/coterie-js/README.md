@@ -12,7 +12,8 @@ coterie chat                       # in any repo — each prompt runs a multi-ag
 ```
 ▲ coterie chat
   mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
-  Each turn: agents deliberate, then one finalizer applies edits + replies. /help for commands. /mode to change modes.
+  modes: single, adversarial, debate, tournament, consensus
+  Each turn: agents deliberate, then one finalizer applies edits + replies. /mode to change modes. /help for commands.
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)
@@ -24,7 +25,14 @@ coterie(adversarial)› add a retry decorator to http.py and cover it with tests
 
 ## Setup (one-time)
 
-Not on npm yet — install from source and link the `coterie` command onto your PATH:
+Install from npm — puts the `coterie` command on your PATH:
+
+```bash
+npm install -g coterie
+```
+
+<details>
+<summary>Or install from source</summary>
 
 ```bash
 git clone https://github.com/cxk280/coterie
@@ -33,6 +41,7 @@ npm install
 npm run build      # compile TypeScript → dist/
 npm link           # puts `coterie` on your PATH globally
 ```
+</details>
 
 Sign in to **at least two** agent CLIs — Coterie coordinates multiple agents, so
 it needs two to deliberate (any pair), and uses all you have. They run on your
@@ -52,8 +61,7 @@ coterie doctor  # ✓/✗ per agent; exits non-zero until at least two are ready
 
 Coterie keeps no config of binary paths or credentials — it finds each CLI on
 your `PATH` and lets it read its own creds, so it authenticates exactly as your
-shell does. `coterie chat` also runs this check on startup. *(Once published,
-the install step becomes `npm install -g coterie`.)*
+shell does. `coterie chat` also runs this check on startup.
 
 Then, in any repo you want it to work in:
 
