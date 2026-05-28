@@ -118,14 +118,15 @@ async function main() {
     .option("--mode <mode>", "Coordination mode (single|adversarial|debate|tournament|consensus)", "adversarial")
     .option("--workdir <path>", "Directory the agents read/edit", ".")
     .option("--quiet", "Start with the live agent exchanges hidden (show only the final reply)", false)
-    .action(async (opts: { mode: string; workdir: string; quiet: boolean }) => {
+    .option("--plan", "Start in plan mode: deliberate and reply with a plan, but make NO file changes (toggle in-session with /plan)", false)
+    .action(async (opts: { mode: string; workdir: string; quiet: boolean; plan: boolean }) => {
       const { runChat } = await import("./chat/repl.js");
       const valid = ["single", "adversarial", "debate", "tournament", "consensus"];
       if (!valid.includes(opts.mode)) {
         console.error(`unknown mode '${opts.mode}'; pick one of ${valid.join(", ")}`);
         process.exit(2);
       }
-      await runChat({ mode: opts.mode as any, workdir: opts.workdir, quiet: opts.quiet });
+      await runChat({ mode: opts.mode as any, workdir: opts.workdir, quiet: opts.quiet, plan: opts.plan });
     });
 
   program

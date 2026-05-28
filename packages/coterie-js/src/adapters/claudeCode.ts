@@ -11,10 +11,11 @@ export class ClaudeCodeAdapter extends CLIAdapter {
   static readonly stripEnv = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 
   buildCommand(prompt: string, _workdir: string, extra: Record<string, unknown> = {}): string[] {
-    // acceptEdits lets the agent apply file edits headlessly while still gating
-    // riskier tools — safe against an isolated workdir. stream-json (which needs
+    // Deliberating agents run read-only ('plan' mode: analyse + propose, never
+    // edit) — only the finalizer mutates files, with 'acceptEdits' to apply them
+    // headlessly while still gating riskier tools. stream-json (which needs
     // --verbose) emits one NDJSON event per step so we can show live progress.
-    const permissionMode = (extra.permissionMode as string) ?? "acceptEdits";
+    const permissionMode = extra.readOnly ? "plan" : "acceptEdits";
     const cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", permissionMode];
     if (this.model) cmd.push("--model", this.model);
     return cmd;

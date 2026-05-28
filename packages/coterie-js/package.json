@@ -1,6 +1,6 @@
 {
   "name": "coterie",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Conversational meta-agent for your terminal: every prompt runs through a multi-agent coordination round (debate, adversarial, tournament, consensus) over Claude Code + Codex, on your subscriptions.",
   "license": "MIT",
   "author": "Chris King <chris@cking.me>",

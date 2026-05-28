@@ -40,21 +40,32 @@ async function buildLlms(mode: Mode, cfg: any, cli: CoordinationCli): Promise<Re
 const HELP = `
 Commands:
   /mode <name>   switch coordination mode (${MODES.join(", ")})
+  /plan [on|off] toggle plan mode — deliberate and show the plan, but make NO
+                 file changes (no arg flips it; on/off set it explicitly)
   /show /hide    show or hide the live agent exchanges
   /clear         forget the conversation so far
   /help          this help
   /exit          quit (or just type 'exit' / 'quit')
   Ctrl+C         cancel the current turn (press again at the prompt to quit)
 
-Each turn the agents deliberate (review/critique/compete, in throwaway
-workspaces), then one final agent applies the edits in your workdir and writes
-the reply — so file edits land in every mode. The mode shapes the deliberation:
-'single' is quickest; 'adversarial' adds an auditor/judge loop; 'debate' /
-'tournament' / 'consensus' get more perspectives before the finalizer acts.
+Each turn the agents deliberate (review/critique/compete, read-only in throwaway
+workspaces — they never edit your files), then one final agent applies the edits
+in your workdir and writes the reply — so file edits land in every mode, but only
+the finalizer makes them. The mode shapes the deliberation: 'single' is quickest;
+'adversarial' adds an auditor/judge loop; 'debate' / 'tournament' / 'consensus'
+get more perspectives before the finalizer acts.
+
+Plan mode (/plan) skips the file-changing step entirely: the agents still
+deliberate, then the finalizer writes you a plan instead of editing — so you can
+see what they'd do and stay confident nothing on disk changes until you toggle off.
 `.trim();
 
-export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolean }): Promise<void> {
+export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolean; plan?: boolean }): Promise<void> {
   let mode = opts.mode;
+  // Plan mode: deliberate as usual but make NO file changes — the finalizer writes
+  // a plan instead of editing. Toggle with /plan; the prompt shows it so the user
+  // can always tell whether this turn will touch disk.
+  let planMode = opts.plan ?? false;
 
   // Build the session lineup from whichever agents are actually available; need
   // at least two to coordinate. Roles within each mode are auto-assigned from it.
@@ -94,9 +105,12 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     kleur.dim(
       `  mode=${mode} · workdir=${opts.workdir} · agents: ${agents.map((a) => a.id).join(", ")} · $0 metered\n` +
         `  modes: ${MODES.join(", ")}\n` +
-        "  Each turn: agents deliberate, then one finalizer applies edits + replies. /mode to change modes. /help for commands.",
+        "  Each turn: agents deliberate (read-only), then one finalizer applies edits + replies. /mode to change modes. /help for commands.",
     ),
   );
+  if (planMode) {
+    console.log(kleur.yellow("  ◇ plan mode ON — coterie will deliberate and reply with a plan, but make NO file changes. /plan to toggle."));
+  }
   // An agent that's installed but signed out isn't broken — it just can't join.
   // Say so clearly (and how to fix it) instead of silently dropping it.
   for (const s of signedOut) {
@@ -115,7 +129,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const setPrompt = () => rl.setPrompt(kleur.cyan(`\ncoterie(${mode})› `));
+  const setPrompt = () => rl.setPrompt(kleur.cyan(`\ncoterie(${mode}${planMode ? " · plan" : ""})› `));
 
   // Ctrl+C cancels the in-flight turn (aborting the agent subprocesses) and keeps
   // the session alive; at the prompt with nothing running it quits.
@@ -156,6 +170,18 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           const next = (rest[0] ?? "").toLowerCase() as Mode;
           if (MODES.includes(next)) { mode = next; setPrompt(); console.log(kleur.dim(`  (mode → ${mode})`)); }
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
+        } else if (cmd === "plan") {
+          const arg = (rest[0] ?? "").toLowerCase();
+          if (arg === "on") planMode = true;
+          else if (arg === "off") planMode = false;
+          else if (arg === "") planMode = !planMode;
+          else { console.log(kleur.red(`  usage: /plan [on|off]`)); rl.prompt(); continue; }
+          setPrompt();
+          console.log(
+            planMode
+              ? kleur.yellow("  (plan mode ON — agents deliberate, the finalizer replies with a plan, and NO files are changed)")
+              : kleur.dim("  (plan mode OFF — the finalizer will apply edits to your workdir again)"),
+          );
         } else console.log(kleur.red(`  unknown command '/${rawCmd ?? ""}' — /help`));
       } else {
         // Build this turn's lineup: drop sidelined agents, but never below the
@@ -183,7 +209,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
         // multi-round turn doesn't trip Node's MaxListenersExceededWarning.
         setMaxListeners(128, activeAbort.signal);
         try {
-          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, activeAbort.signal);
+          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, planMode, activeAbort.signal);
           // Learn from failures: sideline agents that hit a limit / auth problem.
           for (const r of runs ?? []) {
             const c = classifyFailure(r);
@@ -218,6 +244,7 @@ async function runTurn(
   agents: AgentCfg[],
   transcript: Transcript,
   trace: Trace,
+  planMode: boolean,
   signal: AbortSignal,
 ): Promise<AgentRun[] | null> {
   const cfg = defaultConfig(mode, agents);
@@ -226,9 +253,9 @@ async function runTurn(
   // to codex/cursor so a turn works without Claude on the machine.
   const coordCli = coordinationCliFor(agents.map((a) => a.id));
   const llms = await buildLlms(mode, cfg, coordCli);
-  // Deliberation never touches the real workdir — it runs in throwaway worktrees
-  // and feeds the finalizer as advice. The finalizer is the sole mutator.
-  const graph = buildGraph({ workdir, executor: new IsolatedWorktreeExecutor(), config: cfg, ...llms });
+  // Deliberation never touches the real workdir — it runs read-only in throwaway
+  // worktrees and feeds the finalizer as advice. The finalizer is the sole mutator.
+  const graph = buildGraph({ workdir, executor: new IsolatedWorktreeExecutor({ readOnly: true }), config: cfg, ...llms });
 
   const task = transcript.taskFor(text);
   const initial = {
@@ -271,22 +298,31 @@ async function runTurn(
       return final.runs ?? [];
     }
 
-    if (trace.visible) console.log("\n" + rule("finalizing"));
+    if (trace.visible) console.log("\n" + rule(planMode ? "planning" : "finalizing"));
     // The finalizer (the judge seat) is the first available agent. Only pass a
     // model when it's Claude Code — the judge-model aliases are Claude-specific.
     const finalizerAdapter = agents[0]!.adapter;
     const finalizerModel = finalizerAdapter === "claude-code" ? "claude-opus-4-7" : undefined;
+    // In plan mode the finalizer also runs read-only in a throwaway worktree, so
+    // even it can't change the user's files — they get a plan, not edits.
     const { answer, run } = await runFinalizer({
       task,
       digest: digestRound(final),
       workdir,
       adapter: finalizerAdapter,
       model: finalizerModel,
+      planMode,
+      executor: planMode ? new IsolatedWorktreeExecutor({ readOnly: true }) : undefined,
       signal,
     });
 
-    const reply = answer || "(the finalizer produced no reply — check the workdir for edits)";
-    console.log("\n" + kleur.cyan().bold("coterie ›") + " " + reply);
+    const reply =
+      answer ||
+      (planMode ? "(the finalizer produced no plan)" : "(the finalizer produced no reply — check the workdir for edits)");
+    console.log("\n" + kleur.cyan().bold(planMode ? "coterie (plan) ›" : "coterie ›") + " " + reply);
+    if (planMode) {
+      console.log(kleur.yellow("  ◇ plan mode — no files were changed. Toggle off with /plan to let coterie apply it."));
+    }
 
     const totalSpend = (final.spend_usd ?? 0) + (run.cost_estimate_usd ?? 0);
     if (totalSpend) console.log(kleur.dim(`  (≈ $${totalSpend.toFixed(4)} subscription usage — $0 metered)`));
