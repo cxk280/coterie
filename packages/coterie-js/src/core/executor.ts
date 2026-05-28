@@ -39,18 +39,30 @@ export interface AdapterExecutor {
   ): Promise<AdapterResult>;
 }
 
+/** `readOnly` makes an executor run its adapter in a no-edit mode (the adapter
+ *  translates it to its CLI's read-only/plan flag). Coterie uses it for the
+ *  deliberation phase — those agents only analyse/critique; the finalizer is the
+ *  sole agent allowed to mutate the workdir. */
+export interface ExecutorOpts {
+  readOnly?: boolean;
+}
+
 export class LocalSubprocessExecutor implements AdapterExecutor {
+  constructor(private readonly options: ExecutorOpts = {}) {}
+
   execute(
     adapter: CLIAdapter,
     prompt: string,
     workdir: string,
     opts: ExecuteOpts = {},
   ): Promise<AdapterResult> {
-    return adapter.run(prompt, workdir, opts);
+    return adapter.run(prompt, workdir, { ...opts, extra: { readOnly: this.options.readOnly ?? false } });
   }
 }
 
 export class IsolatedWorktreeExecutor implements AdapterExecutor {
+  constructor(private readonly options: ExecutorOpts = {}) {}
+
   async execute(
     adapter: CLIAdapter,
     prompt: string,
@@ -59,7 +71,7 @@ export class IsolatedWorktreeExecutor implements AdapterExecutor {
   ): Promise<AdapterResult> {
     const isolated = this.makeIsolated(workdir);
     try {
-      return await adapter.run(prompt, isolated, opts);
+      return await adapter.run(prompt, isolated, { ...opts, extra: { readOnly: this.options.readOnly ?? false } });
     } finally {
       this.cleanup(isolated, workdir);
     }

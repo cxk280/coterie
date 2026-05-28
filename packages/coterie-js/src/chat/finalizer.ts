@@ -27,6 +27,29 @@ what you did (or directly answering, if no edit was needed). Reply in plain pros
 for a human — do NOT output JSON, finding-lists, or tool logs.`;
 }
 
+/** Plan-mode finalizer prompt: synthesize the deliberation into a plan/answer and
+ *  make NO changes. Used when the user has toggled `/plan` on so they can review
+ *  what the agents propose before any file is touched. */
+export function buildPlanPrompt(task: string, digest: string): string {
+  return `${task}
+
+---
+A panel of coding agents just deliberated on the request above. Their review and
+proposed approaches are summarised below — treat it as advice and critique, not as
+final or necessarily correct work:
+
+${digest}
+---
+
+Coterie is in PLAN MODE: do NOT edit any files or take any state-changing actions.
+You may read the code to inform your answer, but make no changes. Synthesising the
+deliberation above (and correcting any mistakes in it), write the user a clear,
+concise plan: the concrete steps and the specific file changes you would make to
+fulfil their request, plus anything still uncertain — or, if no change is needed,
+just answer their question directly. Reply in plain prose for a human — do NOT
+output JSON, finding-lists, or tool logs.`;
+}
+
 export interface FinalizerOpts {
   task: string;
   digest: string;
@@ -36,6 +59,9 @@ export interface FinalizerOpts {
   model?: string;
   agentId?: string;
   executor?: AdapterExecutor;
+  /** Plan mode: produce a plan/answer and make NO file changes. The caller is
+   *  responsible for passing a read-only executor; this only swaps the prompt. */
+  planMode?: boolean;
   signal?: AbortSignal;
 }
 
@@ -44,7 +70,9 @@ export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: strin
   const ctor = ADAPTER_REGISTRY.require(opts.adapter ?? "claude-code");
   const adapter = new ctor(opts.agentId ?? "finalizer", { model: opts.model });
   const executor = opts.executor ?? new LocalSubprocessExecutor();
-  const prompt = buildFinalizerPrompt(opts.task, opts.digest);
+  const prompt = opts.planMode
+    ? buildPlanPrompt(opts.task, opts.digest)
+    : buildFinalizerPrompt(opts.task, opts.digest);
 
   progress.start({ agent_id: adapter.agent_id, role: "finalizer" });
   const result = await executor.execute(adapter, prompt, opts.workdir, {

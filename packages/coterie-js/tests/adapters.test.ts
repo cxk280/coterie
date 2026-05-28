@@ -18,12 +18,22 @@ describe("agent adapter commands", () => {
     expect(ClaudeCodeAdapter.stripEnv).toContain("ANTHROPIC_API_KEY");
   });
 
+  it("claude-code deliberates read-only in plan mode", () => {
+    const cmd = new ClaudeCodeAdapter("claude-code").buildCommand("review it", ".", { readOnly: true });
+    expect(cmd[cmd.indexOf("--permission-mode") + 1]).toBe("plan");
+  });
+
   it("codex exec runs autonomously but sandboxed, prompt last", () => {
     const cmd = new CodexAdapter("codex").buildCommand("fix bug", ".", {});
     expect(cmd.slice(0, 2)).toEqual(["codex", "exec"]);
     expect(cmd).toContain("--skip-git-repo-check");
     expect(cmd[cmd.indexOf("-s") + 1]).toBe("workspace-write");
     expect(cmd.at(-1)).toBe("fix bug");
+  });
+
+  it("codex deliberates read-only in the read-only sandbox", () => {
+    const cmd = new CodexAdapter("codex").buildCommand("review it", ".", { readOnly: true });
+    expect(cmd[cmd.indexOf("-s") + 1]).toBe("read-only");
   });
 
   it("cursor uses the cursor-agent CLI with --force", () => {

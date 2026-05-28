@@ -6,9 +6,10 @@ export class CodexAdapter extends CLIAdapter {
   static readonly adapterName = "codex";
 
   buildCommand(prompt: string, _workdir: string, extra: Record<string, unknown> = {}): string[] {
-    // workspace-write sandboxes edits to the cwd; --skip-git-repo-check lets exec
-    // run in a plain (non-git) workdir; --json streams JSONL events for live progress.
-    const sandbox = (extra.sandbox as string) ?? "workspace-write";
+    // Deliberating agents run read-only (no edits); the finalizer uses
+    // workspace-write to apply edits sandboxed to the cwd. --skip-git-repo-check
+    // lets exec run in a plain (non-git) workdir; --json streams JSONL events.
+    const sandbox = extra.readOnly ? "read-only" : "workspace-write";
     const cmd = ["codex", "exec", "--skip-git-repo-check", "--json", "-s", sandbox];
     if (this.model) cmd.push("--model", this.model);
     cmd.push(prompt);

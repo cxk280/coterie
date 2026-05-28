@@ -9,6 +9,11 @@ import { registerAdapter } from "../core/registry.js";
  * chat preflight checks for it. Flags verified against cursor-agent's print mode:
  * `-p` non-interactive, `--output-format stream-json` (NDJSON events for live
  * progress), `--force` to apply edits without a confirmation/trust prompt.
+ *
+ * NB: cursor-agent has no read-only/plan flag, so unlike claude/codex it can't be
+ * told to deliberate without editing. Coterie's no-edit guarantee for cursor is
+ * therefore structural: the deliberation (and plan-mode) executor runs it in a
+ * throwaway git worktree and discards the result — `extra.readOnly` is a no-op here.
  */
 export class CursorAdapter extends CLIAdapter {
   static readonly adapterName = "cursor";

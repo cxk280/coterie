@@ -6,15 +6,18 @@
 > A conversational multi-agent coding CLI. You chat like you're talking to one
 > coding assistant — but **every prompt runs through a coordination strategy**
 > (debate, adversarial review, tournament, consensus, or single) over the real
-> coding-agent CLIs you already have. The agents **deliberate**, then a single
-> **finalizer** agent applies the edits and writes the reply — so each response is
-> the product of a reliability-raising round, not one model's first guess.
+> coding-agent CLIs you already have. The agents **deliberate read-only** — they
+> review, critique, and compete but never touch your files — then a single
+> **finalizer** agent applies the edits and writes the reply, so each response is
+> the product of a reliability-raising round, not one model's first guess. Prefer
+> to look before you leap? **`/plan`** mode shows you what they'd do and changes
+> nothing on disk.
 
 ```
 ▲ coterie chat
   mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
   modes: single, adversarial, debate, tournament, consensus
-  Each turn: agents deliberate, then one finalizer applies edits + replies. /mode to change modes. /help for commands.
+  Each turn: agents deliberate (read-only), then one finalizer applies edits + replies. /mode to change modes. /help for commands.
 
 coterie(adversarial)› add a retry decorator to http.py and cover it with tests
   · implementer (claude-code)
@@ -141,23 +144,42 @@ contribution, the judge's verdict, what the finalizer changed — so the round i
 legible, not a black box. `/hide` (or `--quiet`) collapses it to just the reply.
 
 **In-session commands:** `/mode <name>` (switch strategy per prompt) ·
+`/plan [on|off]` (plan mode — deliberate but change no files) ·
 `/show` `/hide` (the live agent exchanges) · `/clear` (forget the conversation) ·
 `/help` · `/exit`
 
-**Flags:** `coterie chat --mode debate --workdir ~/other-repo --quiet`
+**Flags:** `coterie chat --mode debate --workdir ~/other-repo --quiet --plan`
+
+### Plan mode — look before you leap
+
+Sometimes you want to see what the agents would do *before* anything is written to
+disk. Toggle **`/plan`** (or start with `--plan`): the agents still run the full
+deliberation, but the finalizer writes you a **plan** — the steps and file changes
+it *would* make — instead of editing. Nothing on disk changes while plan mode is
+on; the prompt shows `coterie(adversarial · plan)›` so you always know. Toggle
+`/plan` off (or `/plan off`) when you're ready to let it implement.
 
 ## What happens behind the scenes
 
 Every turn has two phases:
 
-1. **Deliberation** — the chosen mode runs the real agent CLIs in throwaway git
-   worktrees (so they never touch your files): they implement, critique, compete,
-   or review. The mode shapes *how* they deliberate.
+1. **Deliberation** — the chosen mode runs the real agent CLIs **read-only** in
+   throwaway git worktrees, so they never touch your files: they propose, critique,
+   compete, or review, but make no edits. The mode shapes *how* they deliberate.
 2. **Finalize** — one agent (the judge seat) runs in your actual workdir, reads
    the deliberation as advice, **applies the edits/actions**, and writes the
-   plain-language reply. It's the only step that changes your files and the only
-   source of the answer — so file edits land in *every* mode, and you never get
-   raw findings JSON back.
+   plain-language reply. It's the **only** step that changes your files and the
+   only source of the answer — so file edits land in *every* mode, and you never
+   get raw findings JSON back.
+
+The split is enforced two ways: the deliberating agents are invoked in their CLI's
+read-only/plan mode (Claude Code `plan`, Codex `read-only` sandbox), and they run
+in a throwaway worktree that's discarded regardless — so even an agent without a
+read-only flag (Cursor) can't change your repo during deliberation.
+
+In **plan mode** (`/plan`), the finalizer is held to the same read-only bargain:
+it reads the deliberation and writes you a plan, but makes no edits — so a plan-mode
+turn changes nothing on disk at all.
 
 ## The five modes (the deliberation phase)
 
