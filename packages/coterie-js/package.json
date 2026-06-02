@@ -54,13 +54,16 @@
     "@langchain/langgraph": "^0.2.0",
     "ajv": "^8.17.1",
     "commander": "^12.1.0",
-    "yaml": "^2.5.0",
-    "kleur": "^4.1.5"
+    "kleur": "^4.1.5",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^20.14.0",
+    "eslint": "^9.39.4",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.60.1",
     "vitest": "^2.0.0"
   }
 }

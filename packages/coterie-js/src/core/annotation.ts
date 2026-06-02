@@ -7,7 +7,6 @@ import { Annotation } from "@langchain/langgraph";
 
 import type {
   AgentRun,
-  CoterieState,
   JudgeDecision,
   Mode,
   RouteDecision,
