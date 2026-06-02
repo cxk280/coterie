@@ -139,14 +139,26 @@ async function main() {
       process.exit(result.ok ? 0 : 1);
     });
 
-  // No subcommand: show help and exit cleanly (0). Printing help is a success,
-  // not an error — bare `coterie` shouldn't look like something went wrong.
-  if (process.argv.slice(2).length === 0) {
-    program.outputHelp();
-    return;
+  // `coterie` IS `coterie chat`: the conversational REPL is the product, so a bare
+  // invocation (or one with only chat-style flags, e.g. `coterie --mode debate`)
+  // defaults to `chat`. Explicit subcommands (`run`, `doctor`, `chat`) and the
+  // help/version flags still route normally; a leading bare word that isn't a
+  // command falls through so commander reports it as an unknown command (rather
+  // than being silently swallowed as a chat default).
+  const userArgs = process.argv.slice(2);
+  const first = userArgs[0];
+  const isHelpOrVersion = (a: string) =>
+    a === "-h" || a === "--help" || a === "-V" || a === "--version";
+  if (userArgs.length === 0) {
+    userArgs.unshift("chat");
+  } else if (first !== undefined && first.startsWith("-") && !isHelpOrVersion(first)) {
+    // Leading flag with no subcommand: the program has no top-level options, so
+    // it's a chat invocation (help/version, which the program itself answers,
+    // are excluded above).
+    userArgs.unshift("chat");
   }
 
-  await program.parseAsync(process.argv);
+  await program.parseAsync(userArgs, { from: "user" });
 }
 
 main().catch((e) => {
