@@ -14,7 +14,7 @@
 > nothing on disk.
 
 ```
-▲ coterie chat
+▲ coterie
   mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
   modes: single, adversarial, debate, tournament, consensus
   Each turn: agents deliberate (read-only), then one finalizer applies edits + replies. /mode to change modes. /help for commands.
@@ -53,7 +53,7 @@ and gives you back a single answer.
   agent would have shipped.
 - **It's a finished terminal app, not a framework.** Agent frameworks (CrewAI,
   AutoGen, or rolling your own on LangGraph) are libraries you write code against
-  and point at metered model APIs. Coterie is just `coterie chat` — install it and
+  and point at metered model APIs. Coterie is just `coterie` — install it and
   it drives the agent CLIs already on your machine. No glue code, no orchestration
   to build.
 - **$0 metered, by design.** It rides the subscriptions you already pay for
@@ -133,8 +133,13 @@ npm link           # puts `coterie` on your PATH globally
 
 ```bash
 cd ~/your-project          # the repo the agents read/edit (the "workdir")
-coterie chat               # adversarial by default; runs in the current directory
+coterie                    # adversarial by default; runs in the current directory
 ```
+
+**`coterie` is `coterie chat`** — the conversational REPL is the product, so a bare
+`coterie` drops you straight into it. (`coterie chat` still works if you like being
+explicit, and chat's flags work with or without it: `coterie --mode debate` ==
+`coterie chat --mode debate`.)
 
 Then just talk to it. Each turn runs a full multi-agent round behind the scenes;
 the answer (and any file edits) is the result.
@@ -148,7 +153,8 @@ legible, not a black box. `/hide` (or `--quiet`) collapses it to just the reply.
 `/show` `/hide` (the live agent exchanges) · `/clear` (forget the conversation) ·
 `/help` · `/exit`
 
-**Flags:** `coterie chat --mode debate --workdir ~/other-repo --quiet --plan`
+**Flags:** `coterie --mode debate --workdir ~/other-repo --quiet --plan` (the
+`chat` is optional — `coterie chat --mode debate …` is identical)
 
 ### Plan mode — look before you leap
 

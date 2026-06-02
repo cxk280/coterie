@@ -6,11 +6,15 @@ round** (debate, adversarial review, tournament, consensus, or single) behind th
 scenes — raising the reliability and quality of each response.
 
 ```bash
-coterie chat                       # in any repo — each prompt runs a multi-agent round
+coterie                            # in any repo — each prompt runs a multi-agent round
 ```
 
+`coterie` is `coterie chat` — a bare `coterie` drops you straight into the REPL.
+(`coterie chat` still works, and chat's flags work either way: `coterie --mode
+debate` == `coterie chat --mode debate`.)
+
 ```
-▲ coterie chat
+▲ coterie
   mode=adversarial · workdir=. · agents: claude-code, codex, cursor · $0 metered
   modes: single, adversarial, debate, tournament, consensus
   Each turn: agents deliberate, then one finalizer applies edits + replies. /mode to change modes. /help for commands.
@@ -61,13 +65,13 @@ coterie doctor  # ✓/✗ per agent; exits non-zero until at least two are ready
 
 Coterie keeps no config of binary paths or credentials — it finds each CLI on
 your `PATH` and lets it read its own creds, so it authenticates exactly as your
-shell does. `coterie chat` also runs this check on startup.
+shell does. `coterie` also runs this check on startup.
 
 Then, in any repo you want it to work in:
 
 ```bash
 cd ~/my-project
-coterie chat        # runs entirely on your subscriptions — $0 metered
+coterie             # runs entirely on your subscriptions — $0 metered
 ```
 
 ## How it works
@@ -97,7 +101,7 @@ Everything runs on your existing logins — the agents on **Claude Max**, **Chat
 judging / moderating) on a coding agent's CLI too: it prefers Claude (`claude -p`)
 but **falls back to Codex or Cursor**, so coordination works even without Claude
 installed. So a full turn is **$0 metered** — no setup, no flags. On startup
-`coterie chat` checks each required CLI is installed and signed in, and tells you
+`coterie` checks each required CLI is installed and signed in, and tells you
 exactly what to do if not.
 
 > **No pay-as-you-go API backend (yet).** Coordination is subscription-only by
@@ -118,8 +122,8 @@ judge's verdict, what the finalizer changed. `/hide` (or `--quiet`) shows only t
 reply.
 
 ```bash
-coterie chat --mode debate --workdir ~/proj   # start in a mode, against a repo
-coterie chat --quiet                            # hide the agent exchanges
+coterie --mode debate --workdir ~/proj   # start in a mode, against a repo
+coterie --quiet                          # hide the agent exchanges
 ```
 
 ## One-shot (non-conversational)

@@ -57,7 +57,7 @@ export class Registry<T> {
   }
 }
 
-import type { CLIAdapter, CLIAdapterCtor } from "../adapters/base.js";
+import type { CLIAdapterCtor } from "../adapters/base.js";
 import type { ModeBuilder } from "./types.js";
 
 export const ADAPTER_REGISTRY = new Registry<CLIAdapterCtor>("adapter");

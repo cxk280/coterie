@@ -100,7 +100,9 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
   const trace = new Trace(!opts.quiet);
   trace.attach();
 
-  console.log(kleur.cyan().bold("▲ coterie chat"));
+  // Invocation-agnostic: the REPL is reached by bare `coterie` and `coterie chat`
+  // alike, so the banner names the product, not the subcommand.
+  console.log(kleur.cyan().bold("▲ coterie"));
   console.log(
     kleur.dim(
       `  mode=${mode} · workdir=${opts.workdir} · agents: ${agents.map((a) => a.id).join(", ")} · $0 metered\n` +

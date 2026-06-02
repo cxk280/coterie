@@ -104,11 +104,29 @@ describe("coterie CLI (black-box)", () => {
     expect(r.stdout).toMatch(/\brun\b/);
   });
 
-  it("bare `coterie` prints help and exits 0 (not an error)", () => {
-    const r = runCli([], { PATH: process.env.PATH });
+  it("bare `coterie` is `coterie chat` — same preflight, not a help dump", () => {
+    // `coterie` defaults to the chat REPL, so against an env missing an agent it
+    // hits chat's preflight and fails identically to an explicit `coterie chat`.
+    const bare = runCli([], sandboxEnv(["codex"]));
+    const explicit = runCli(["chat"], sandboxEnv(["codex"]));
+    expect(bare.status).toBe(1);
+    expect(bare.status).toBe(explicit.status);
+    expect(bare.stderr + bare.stdout).toMatch(/claude[^\n]*not installed/);
+    // and it is NOT a help dump (the old bare-invocation behavior)
+    expect(bare.stdout).not.toMatch(/Commands:/);
+  });
+
+  it("bare `coterie` with claude+codex opens the REPL and quits on exit", () => {
+    const r = runCli([], sandboxEnv(["claude", "codex"]), "exit\n");
+    const out = r.stdout + r.stderr;
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/\bchat\b/);
-    expect(r.stdout).toMatch(/\bdoctor\b/);
+    expect(out).toContain("bye.");
+  });
+
+  it("a leading chat flag with no subcommand routes to chat (`coterie --mode bogus`)", () => {
+    const r = runCli(["--mode", "bogus"], { PATH: process.env.PATH });
+    expect(r.status).toBe(2);
+    expect(r.stderr + r.stdout).toMatch(/unknown mode/i);
   });
 
   it("an unknown command points the user at --help", () => {
