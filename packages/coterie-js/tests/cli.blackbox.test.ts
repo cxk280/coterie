@@ -177,6 +177,21 @@ describe("coterie CLI (black-box)", () => {
     expect(out).not.toMatch(/deliberation/i); // never reached the coordination round
   });
 
+  it("outside a git repo, chat still opens — locked into read-only plan mode", () => {
+    // A non-git workdir used to be a hard exit. Now coterie runs there read-only so
+    // you can just talk: plan mode is forced on, and /plan can't toggle it off.
+    const workdir = mkdtempSync(join(tmpdir(), "coterie-nogit-"));
+    cleanups.push(() => rmSync(workdir, { recursive: true, force: true }));
+    const r = runCli(["chat", "--workdir", workdir], sandboxEnv(["claude", "codex"]), "/plan off\n/exit\n");
+    const out = r.stdout + r.stderr;
+    expect(r.status).toBe(0); // opened the REPL rather than exiting 1
+    expect(out).toContain("bye.");
+    expect(out).toMatch(/not a git repository/);
+    expect(out).toMatch(/plan mode/i);
+    expect(out).toMatch(/locked on/i); // /plan off was refused
+    expect(out).not.toMatch(/Can't start/); // the old hard-exit message is gone
+  });
+
   it("names an installed-but-signed-out agent instead of silently dropping it", () => {
     // claude + codex ready (2 → REPL opens); cursor-agent installed but signed out.
     const r = runCli(

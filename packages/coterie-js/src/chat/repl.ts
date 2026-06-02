@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 
 import kleur from "kleur";
 
-import { gitRepoReady, IsolatedWorktreeExecutor } from "../core/executor.js";
+import { gitRepoReady, IsolatedWorktreeExecutor, LocalSubprocessExecutor } from "../core/executor.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { type CoordinationCli, buildLLM, coordinationCliFor } from "../core/llm/build.js";
 import type { AgentRun, Mode } from "../core/state.js";
@@ -81,19 +81,15 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
     return;
   }
 
-  // Deliberation runs in an isolated git worktree of the workdir, so it must be a
-  // git repo with a commit — otherwise every turn would error mid-flight.
+  // Deliberation normally runs in an isolated git worktree of the workdir. Outside
+  // a git repo we can't isolate and can't safely apply edits, so rather than refuse
+  // to start we run read-only: plan mode is locked on, agents read the workdir in
+  // place, and the finalizer replies with a plan/answer without touching disk. That
+  // lets you use coterie to just talk (about code or anything) anywhere.
   const git = gitRepoReady(opts.workdir);
-  if (!git.ok) {
-    console.error(
-      kleur.yellow(
-        `Can't start: ${opts.workdir} is ${git.reason}. coterie runs each turn's deliberation in an ` +
-          "isolated git worktree, so the working directory must be a git repo with at least one commit.\n" +
-          "  Fix: cd into your project and run `git init && git add -A && git commit -m init`.",
-      ),
-    );
-    process.exitCode = 1;
-    return;
+  const gitReady = git.ok;
+  if (!gitReady) {
+    planMode = true;
   }
 
   const transcript = new Transcript();
@@ -110,7 +106,15 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
         "  Each turn: agents deliberate (read-only), then one finalizer applies edits + replies. /mode to change modes. /help for commands.",
     ),
   );
-  if (planMode) {
+  if (!gitReady) {
+    console.log(
+      kleur.yellow(
+        `  ◇ ${opts.workdir} is ${git.reason} — running in plan mode (read-only): coterie will deliberate and reply ` +
+          "with a plan/answer but make NO file changes.\n" +
+          "    To let coterie edit files, run it inside a git repo (git init && git add -A && git commit -m init).",
+      ),
+    );
+  } else if (planMode) {
     console.log(kleur.yellow("  ◇ plan mode ON — coterie will deliberate and reply with a plan, but make NO file changes. /plan to toggle."));
   }
   // An agent that's installed but signed out isn't broken — it just can't join.
@@ -173,6 +177,17 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
           if (MODES.includes(next)) { mode = next; setPrompt(); console.log(kleur.dim(`  (mode → ${mode})`)); }
           else console.log(kleur.red(`  unknown mode '${rest[0] ?? ""}'; pick one of ${MODES.join(", ")}`));
         } else if (cmd === "plan") {
+          // Outside a git repo there's no safe way to apply edits, so plan mode is
+          // locked on — don't let /plan toggle it off and then silently no-op.
+          if (!gitReady) {
+            console.log(
+              kleur.yellow(
+                "  (plan mode is locked on — there's no git repo here, so coterie can't safely apply edits. Run it inside a git repo to enable file changes.)",
+              ),
+            );
+            rl.prompt();
+            continue;
+          }
           const arg = (rest[0] ?? "").toLowerCase();
           if (arg === "on") planMode = true;
           else if (arg === "off") planMode = false;
@@ -211,7 +226,7 @@ export async function runChat(opts: { mode: Mode; workdir: string; quiet: boolea
         // multi-round turn doesn't trip Node's MaxListenersExceededWarning.
         setMaxListeners(128, activeAbort.signal);
         try {
-          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, planMode, activeAbort.signal);
+          const runs = await runTurn(text, mode, opts.workdir, lineup, transcript, trace, planMode, gitReady, activeAbort.signal);
           // Learn from failures: sideline agents that hit a limit / auth problem.
           for (const r of runs ?? []) {
             const c = classifyFailure(r);
@@ -247,6 +262,7 @@ async function runTurn(
   transcript: Transcript,
   trace: Trace,
   planMode: boolean,
+  gitReady: boolean,
   signal: AbortSignal,
 ): Promise<AgentRun[] | null> {
   const cfg = defaultConfig(mode, agents);
@@ -255,9 +271,13 @@ async function runTurn(
   // to codex/cursor so a turn works without Claude on the machine.
   const coordCli = coordinationCliFor(agents.map((a) => a.id));
   const llms = await buildLlms(mode, cfg, coordCli);
-  // Deliberation never touches the real workdir — it runs read-only in throwaway
-  // worktrees and feeds the finalizer as advice. The finalizer is the sole mutator.
-  const graph = buildGraph({ workdir, executor: new IsolatedWorktreeExecutor({ readOnly: true }), config: cfg, ...llms });
+  // The read-only deliberation executor: inside a git repo it runs in a throwaway
+  // worktree (full isolation); outside one we can't make a worktree, so we run the
+  // adapter read-only directly in the workdir — still no edits, just no isolation.
+  // Either way the finalizer is the sole mutator (and only when gitReady).
+  const readOnlyExecutor = () =>
+    gitReady ? new IsolatedWorktreeExecutor({ readOnly: true }) : new LocalSubprocessExecutor({ readOnly: true });
+  const graph = buildGraph({ workdir, executor: readOnlyExecutor(), config: cfg, ...llms });
 
   const task = transcript.taskFor(text);
   const initial = {
@@ -314,7 +334,7 @@ async function runTurn(
       adapter: finalizerAdapter,
       model: finalizerModel,
       planMode,
-      executor: planMode ? new IsolatedWorktreeExecutor({ readOnly: true }) : undefined,
+      executor: planMode ? readOnlyExecutor() : undefined,
       signal,
     });
 
