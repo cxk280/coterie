@@ -1,11 +1,12 @@
 version: 2.1
 
-# CI for the Coterie CLI (packages/coterie-js): build, typecheck, vitest.
+# CI for the Coterie CLI (packages/coterie-js): build, typecheck, lint, vitest.
 
 jobs:
   js:
     docker:
-      - image: cimg/node:22.11
+      # 22.13+ to satisfy ESLint 9's engine floor (^22.13.0); see the lint step.
+      - image: cimg/node:22.13
     steps:
       - checkout
       - run:
@@ -17,6 +18,9 @@ jobs:
       - run:
           name: Typecheck
           command: npx tsc -p packages/coterie-js/tsconfig.json --noEmit
+      - run:
+          name: Lint
+          command: npm run lint -w packages/coterie-js
       - run:
           name: Tests
           command: npm test -w packages/coterie-js
