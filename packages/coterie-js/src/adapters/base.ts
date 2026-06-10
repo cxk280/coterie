@@ -1,8 +1,13 @@
-/** CLIAdapter contract. Mirrors Python's `adapters/base.py`. */
+/** CLIAdapter contract: how Coterie drives one agent CLI (claude / codex /
+ *  cursor / fake) as a subprocess. Concrete adapters supply the argv and parse
+ *  the output; `run()` here owns the shared spawn/timeout/abort/streaming
+ *  plumbing (via core/spawn). Executors (core/executor.ts) call `run()`. */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
-import { sleepAwareTimeout } from "../core/timeout.js";
+import { spawnCapture } from "../core/spawn.js";
+
+export { abortError } from "../core/spawn.js";
 
 export interface AdapterResult {
   stdout: string;
@@ -16,14 +21,6 @@ export interface AdapterResult {
 export interface CLIAdapterCtor {
   adapterName: string;
   new (agent_id: string, opts?: { model?: string }): CLIAdapter;
-}
-
-/** A DOMException-style abort error so callers can detect cancellation via
- *  `err.name === "AbortError"` (matches what `fetch`/AbortSignal users expect). */
-export function abortError(): Error {
-  const e = new Error("The operation was aborted");
-  e.name = "AbortError";
-  return e;
 }
 
 export abstract class CLIAdapter {
@@ -91,116 +88,30 @@ export abstract class CLIAdapter {
     const [cmd, ...args] = argv;
     if (!cmd) throw new Error(`Adapter ${this.agent_id} produced an empty command`);
     const t0 = Date.now();
-    const { stdout, stderr, code } = await this.spawnCollect(cmd, args, workdir, opts);
-    const result = this.parseResult(stdout, stderr, code);
+    const timeoutMs = opts.timeoutMs ?? 600_000;
+    const r = await spawnCapture(cmd, args, {
+      cwd: workdir,
+      env: this.subprocessEnv(),
+      timeoutMs,
+      signal: opts.signal,
+      onLine: opts.onStream
+        ? (line) => {
+            try {
+              const note = this.streamEvent(line);
+              if (note) opts.onStream!(note);
+            } catch {
+              // a malformed line must never break the run
+            }
+          }
+        : undefined,
+    });
+    if (r.timedOut) throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
+    const result = this.parseResult(r.stdout, r.stderr, r.code);
     result.duration_s = (Date.now() - t0) / 1000;
     // Report which files the agent actually touched (so the trace can show
     // "edited X, Y") unless the adapter already computed it.
     if (!result.files_changed?.length) result.files_changed = this.gitChangedFiles(workdir);
     return result;
-  }
-
-  private spawnCollect(
-    cmd: string,
-    args: string[],
-    workdir: string,
-    opts: { timeoutMs?: number; signal?: AbortSignal; onStream?: (text: string) => void },
-  ): Promise<{ stdout: string; stderr: string; code: number }> {
-    return new Promise((resolve, reject) => {
-      if (opts.signal?.aborted) return reject(abortError());
-
-      // stdin = /dev/null so the child gets an immediate EOF. Headless agent CLIs
-      // (notably `codex exec`) otherwise block forever waiting on stdin — async
-      // spawn leaves the stdin pipe open, unlike the old spawnSync which closed it.
-      const child = spawn(cmd, args, {
-        cwd: workdir,
-        env: this.subprocessEnv(),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      const cap = 32 * 1024 * 1024;
-      // Buffer stdout into whole lines so each NDJSON event can be turned into a
-      // live progress note as it streams (without blocking — the loop is free).
-      const lineCap = 1024 * 1024;
-      let lineBuf = "";
-      // True while we're discarding an over-cap, not-yet-terminated line; reset
-      // at the next newline so streaming resyncs on the following whole line.
-      let lineOverflow = false;
-      child.stdout?.on("data", (d) => {
-        const s = d.toString();
-        if (stdout.length < cap) stdout += s;
-        if (!opts.onStream) return;
-        lineBuf += s;
-        let nl: number;
-        while ((nl = lineBuf.indexOf("\n")) >= 0) {
-          const line = lineBuf.slice(0, nl);
-          lineBuf = lineBuf.slice(nl + 1);
-          if (lineOverflow) {
-            // This newline closes the dropped line; resume on the next one.
-            lineOverflow = false;
-            continue;
-          }
-          try {
-            const note = this.streamEvent(line);
-            if (note) opts.onStream(note);
-          } catch {
-            // a malformed line must never break the run
-          }
-        }
-        // Bound the partial-line buffer: a producer that emits a multi-megabyte
-        // single line (or never a newline) must not grow it without limit — the
-        // authoritative `stdout` is capped, and progress notes are best-effort,
-        // so drop the partial line and resync at the next newline.
-        if (lineBuf.length > lineCap) {
-          lineBuf = "";
-          lineOverflow = true;
-        }
-      });
-      child.stderr?.on("data", (d) => {
-        if (stderr.length < cap) stderr += d.toString();
-      });
-
-      // Graceful kill: SIGTERM, then SIGKILL if it doesn't exit in time.
-      const hardKill = () => {
-        if (!child.killed) child.kill("SIGKILL");
-      };
-      const kill = () => {
-        child.kill("SIGTERM");
-        setTimeout(hardKill, 2_000).unref();
-      };
-
-      const timeoutMs = opts.timeoutMs ?? 600_000;
-      let timedOut = false;
-      // Sleep-aware: a wall-clock timer would kill a merely-suspended child the
-      // instant the machine wakes. This only counts active time.
-      const clearTimer = sleepAwareTimeout(timeoutMs, () => {
-        timedOut = true;
-        kill();
-      });
-
-      const onAbort = () => {
-        kill();
-        cleanup();
-        reject(abortError());
-      };
-      opts.signal?.addEventListener("abort", onAbort, { once: true });
-
-      const cleanup = () => {
-        clearTimer();
-        opts.signal?.removeEventListener("abort", onAbort);
-      };
-
-      child.on("error", (err) => {
-        cleanup();
-        reject(err);
-      });
-      child.on("close", (code) => {
-        cleanup();
-        if (timedOut) reject(new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`));
-        else resolve({ stdout, stderr, code: code ?? 1 });
-      });
-    });
   }
 
   protected gitChangedFiles(workdir: string): string[] {
