@@ -1,3 +1,7 @@
+/** The tournament mode's bracket judge: ranks each round's attempts (LLM, with a
+ *  deterministic cheapest-successful fallback), halves the field per round, and
+ *  records the winner. Wired into a graph by modes/tournament.ts. */
+
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 
@@ -12,6 +16,16 @@ Return strict JSON only — no prose, no markdown:
   "summary": "<2-3 sentences>"
 }`;
 
+/** Deterministic fallback winner when there's no judge LLM (or its output is
+ *  unparseable): prefer attempts that succeeded, then take the cheapest. */
+function cheapestAttempt(attempts: any[]): any {
+  const successful = attempts.filter((a) => a.exit_code === 0);
+  const pool = successful.length ? successful : attempts;
+  return pool.reduce((a, b) =>
+    (a.cost_estimate_usd ?? Infinity) <= (b.cost_estimate_usd ?? Infinity) ? a : b,
+  );
+}
+
 async function rankCurrentRound(
   llm: LLMClient | null,
   task: string,
@@ -19,12 +33,7 @@ async function rankCurrentRound(
   criteria: string[],
 ): Promise<{ ranking: any[]; winner: string; summary: string }> {
   if (!llm) {
-    const successful = attempts.filter((a) => a.exit_code === 0);
-    const pool = successful.length ? successful : attempts;
-    const chosen = pool.reduce((a, b) =>
-      (a.cost_estimate_usd ?? Infinity) <= (b.cost_estimate_usd ?? Infinity) ? a : b,
-    );
-    return { ranking: [], winner: chosen.agent_id, summary: "no judge LLM; chose cheapest" };
+    return { ranking: [], winner: cheapestAttempt(attempts).agent_id, summary: "no judge LLM; chose cheapest" };
   }
 
   const block = attempts
@@ -39,12 +48,7 @@ async function rankCurrentRound(
     const d = JSON.parse(raw);
     return { ranking: d.ranking ?? [], winner: d.winner, summary: d.summary ?? "" };
   } catch {
-    const successful = attempts.filter((a) => a.exit_code === 0);
-    const pool = successful.length ? successful : attempts;
-    const chosen = pool.reduce((a, b) =>
-      (a.cost_estimate_usd ?? Infinity) <= (b.cost_estimate_usd ?? Infinity) ? a : b,
-    );
-    return { ranking: [], winner: chosen.agent_id, summary: `bracket judge unparseable: ${raw.slice(0, 120)}` };
+    return { ranking: [], winner: cheapestAttempt(attempts).agent_id, summary: `bracket judge unparseable: ${raw.slice(0, 120)}` };
   }
 }
 

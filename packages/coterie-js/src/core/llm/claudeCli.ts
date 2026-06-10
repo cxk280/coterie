@@ -12,7 +12,7 @@
 
 import { parseJsonLoose } from "../json.js";
 import { spawnCapture } from "../spawn.js";
-import type { LLMClient, LLMMessage } from "./base.js";
+import { type LLMClient, type LLMMessage, foldPrompt } from "./base.js";
 
 const TOOLS_OFF = [
   "Bash",
@@ -37,10 +37,7 @@ export class ClaudeCliClient implements LLMClient {
   ) {}
 
   async chat(system: string, messages: LLMMessage[], signal?: AbortSignal): Promise<string> {
-    // Coordination calls are single-shot; fold the turns into one prompt.
-    const prompt = messages
-      .map((m) => (m.role === "user" ? m.content : `[${m.role}]\n${m.content}`))
-      .join("\n\n");
+    const prompt = foldPrompt(messages); // system goes via --system-prompt
 
     const env = { ...process.env };
     delete env.ANTHROPIC_API_KEY;

@@ -1,6 +1,10 @@
+/** The debate mode's coordination nodes: a moderator that summarizes each pro/con
+ *  round, and a judge that scores the full transcript and picks the winner.
+ *  Wired into a graph by modes/debate.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
-import type { CoterieState } from "../core/state.js";
+import { type CoterieState, lastRunByRole } from "../core/state.js";
 
 const MODERATOR_SYSTEM = `You are an impartial debate moderator.
 Given the latest Pro and Con arguments, produce a concise round summary and identify
@@ -25,10 +29,9 @@ Return strict JSON only:
 
 export function makeModeratorNode(llm: LLMClient | null) {
   return async (state: CoterieState) => {
-    const runs = state.runs ?? [];
     const modeState = { ...(state.mode_state ?? {}) };
-    const proRun = [...runs].reverse().find((r) => r.role === "pro");
-    const conRun = [...runs].reverse().find((r) => r.role === "con");
+    const proRun = lastRunByRole(state.runs, "pro");
+    const conRun = lastRunByRole(state.runs, "con");
     if (!proRun || !conRun) return { mode_state: modeState };
 
     let summary: any;

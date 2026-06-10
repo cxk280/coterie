@@ -7,7 +7,7 @@
 import { LocalSubprocessExecutor, type AdapterExecutor } from "../core/executor.js";
 import { progress } from "../core/progress.js";
 import { ADAPTER_REGISTRY } from "../core/registry.js";
-import type { AgentRun } from "../core/state.js";
+import { type AgentRun, makeRun } from "../core/state.js";
 
 export function buildFinalizerPrompt(task: string, digest: string): string {
   return `${task}
@@ -80,17 +80,7 @@ export async function runFinalizer(opts: FinalizerOpts): Promise<{ answer: strin
     signal: opts.signal,
     onStream: (text) => progress.step({ agent_id: adapter.agent_id, role: "finalizer", text }),
   });
-  const run: AgentRun = {
-    agent_id: adapter.agent_id,
-    role: "finalizer",
-    prompt,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exit_code: result.exit_code,
-    files_changed: result.files_changed,
-    duration_s: result.duration_s,
-    cost_estimate_usd: result.cost_estimate_usd,
-  };
+  const run: AgentRun = makeRun(adapter.agent_id, "finalizer", prompt, result);
   progress.done({ run });
   return { answer: (result.stdout ?? "").trim(), run };
 }

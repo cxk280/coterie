@@ -1,3 +1,7 @@
+/** The consensus mode's engine: clusters the participants' findings (LLM, with a
+ *  no-merge fallback) and labels each cluster by how many agents agree.
+ *  Wired into a graph by modes/consensus.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
@@ -17,6 +21,18 @@ Output: a JSON array of clusters. Each cluster:
 Two findings belong in the same cluster when they identify the same defect, even if
 worded differently. Be strict — do not merge unrelated findings just because they share a category.
 Return only the JSON array, no prose, no markdown.`;
+
+/** One cluster per finding, no merging — the fallback when there's no engine LLM
+ *  (or its output is unparseable). Every finding then reads as single-supporter. */
+function singletonClusters(flat: any[]): any[] {
+  return flat.map((f, i) => ({
+    description: f.description,
+    category: f.category ?? "unknown",
+    severity: f.severity ?? "low",
+    supporting_agents: [f.agent_id],
+    member_indices: [i],
+  }));
+}
 
 export function makeConsensusEngineNode(llm: LLMClient | null) {
   return async (state: CoterieState) => {
@@ -48,29 +64,13 @@ export function makeConsensusEngineNode(llm: LLMClient | null) {
 
     let clusters: any[];
     if (!llm) {
-      clusters = flat.map((f, i) => ({
-        description: f.description,
-        category: f.category ?? "unknown",
-        severity: f.severity ?? "low",
-        supporting_agents: [f.agent_id],
-        member_indices: [i],
-      }));
+      clusters = singletonClusters(flat);
     } else {
       const raw = await llm.chat(ENGINE_SYSTEM, [
         { role: "user", content: `Cluster these findings:\n${JSON.stringify(flat)}` },
       ]);
       const parsed = parseJsonLoose(raw);
-      if (Array.isArray(parsed)) {
-        clusters = parsed;
-      } else {
-        clusters = flat.map((f, i) => ({
-          description: f.description,
-          category: f.category ?? "unknown",
-          severity: f.severity ?? "low",
-          supporting_agents: [f.agent_id],
-          member_indices: [i],
-        }));
-      }
+      clusters = Array.isArray(parsed) ? parsed : singletonClusters(flat);
     }
 
     const consensus = clusters.map((c) => {

@@ -1,3 +1,6 @@
+/** The planner node every mode starts with: pass-through (the task is the plan)
+ *  by default, or LLM decomposition into subtasks when `planner.enabled` is set. */
+
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 

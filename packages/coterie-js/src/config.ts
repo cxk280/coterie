@@ -1,3 +1,7 @@
+/** Loads and schema-validates a coterie.yaml config for `coterie run`. (The chat
+ *  REPL doesn't read config files — it builds defaults via chat/configs.ts.)
+ *  Cross-reference checks live in core/validate.ts; this covers file + shape. */
+
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

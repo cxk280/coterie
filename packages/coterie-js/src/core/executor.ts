@@ -1,9 +1,10 @@
 /**
- * AdapterExecutor seam. Mirrors Python `core/executor.py`.
+ * AdapterExecutor seam: where (and how safely) an agent subprocess runs.
  *
  * Two concretes:
- * - `LocalSubprocessExecutor` — delegates to `adapter.run()`. Default.
- * - `IsolatedWorktreeExecutor` — each call runs in an ephemeral git worktree.
+ * - `LocalSubprocessExecutor` — delegates to `adapter.run()` in the workdir. Default.
+ * - `IsolatedWorktreeExecutor` — each call runs in an ephemeral git worktree, so
+ *   deliberating agents can never touch the user's files.
  */
 
 import { spawnSync } from "node:child_process";

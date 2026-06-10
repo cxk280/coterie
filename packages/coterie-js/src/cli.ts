@@ -26,8 +26,8 @@ import { loadConfig } from "./config.js";
 import { progress } from "./core/progress.js";
 import { validateRuntimeConfig } from "./core/validate.js";
 import { IsolatedWorktreeExecutor, LocalSubprocessExecutor, type AdapterExecutor } from "./core/executor.js";
-import type { LLMClient } from "./core/llm/base.js";
-import { buildLLM, coordinationCliFor } from "./core/llm/build.js";
+import { buildRoleLlms, coordinationCliFor } from "./core/llm/build.js";
+import { initialState, MODES } from "./core/state.js";
 import { buildGraph } from "./graph.js";
 
 import "./adapters/index.js";  // trigger adapter registration
@@ -76,16 +76,7 @@ async function main() {
       const mode = cfg.mode;
       const executor = buildExecutor(cfg);
       const coordCli = coordinationCliFor((cfg.agents as any[]).map((a) => a.id));
-
-      const llms: Record<string, LLMClient | null> = {
-        supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model, coordCli) : null,
-        judge_llm: ["adversarial", "tournament", "debate"].includes(mode)
-          ? await buildLLM(cfg[mode]?.judge?.model, coordCli)
-          : null,
-        consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model, coordCli) : null,
-        moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model, coordCli) : null,
-        planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model, coordCli) : null,
-      };
+      const llms = await buildRoleLlms(mode, cfg, coordCli);
 
       const graph = buildGraph({ workdir: opts.workdir, executor, config: cfg, ...llms });
       console.log(kleur.cyan().bold(`— coterie · mode=${mode} · ${cfg.agents.length} agents —`));
@@ -97,12 +88,9 @@ async function main() {
       };
       progress.on("done", onDone);
 
-      const initial = {
-        task, mode, plan: [], current_step_idx: 0, runs: [], artifacts: {},
-        status: "planning", config: cfg, spend_usd: 0, route_history: [],
-        judge_history: [], next_agent: null, mode_state: {},
-      };
-      const final: any = await graph.invoke(initial, { recursionLimit: 24 }).finally(() => progress.off("done", onDone));
+      const final: any = await graph
+        .invoke(initialState(task, cfg), { recursionLimit: 24 })
+        .finally(() => progress.off("done", onDone));
       if (final.runs?.length) console.log(final.runs[final.runs.length - 1].stdout);
       for (const r of final.runs ?? []) {
         if (runFailed(r)) console.error(kleur.yellow(`⚠ ${r.role} (${r.agent_id}) ${renderFailure(r)}`));
@@ -121,9 +109,8 @@ async function main() {
     .option("--plan", "Start in plan mode: deliberate and reply with a plan, but make NO file changes (toggle in-session with /plan)", false)
     .action(async (opts: { mode: string; workdir: string; quiet: boolean; plan: boolean }) => {
       const { runChat } = await import("./chat/repl.js");
-      const valid = ["single", "adversarial", "debate", "tournament", "consensus"];
-      if (!valid.includes(opts.mode)) {
-        console.error(`unknown mode '${opts.mode}'; pick one of ${valid.join(", ")}`);
+      if (!(MODES as string[]).includes(opts.mode)) {
+        console.error(`unknown mode '${opts.mode}'; pick one of ${MODES.join(", ")}`);
         process.exit(2);
       }
       await runChat({ mode: opts.mode as any, workdir: opts.workdir, quiet: opts.quiet, plan: opts.plan });

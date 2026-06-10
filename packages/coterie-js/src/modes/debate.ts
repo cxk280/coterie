@@ -1,9 +1,13 @@
+/** Mode "debate": two agents argue pro/con for N rounds; a moderator summarizes
+ *  each round and a judge picks the winner (nodes/moderator.ts). Registered into
+ *  MODE_REGISTRY at import; built per turn by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";
 import { compileGraph } from "../core/compile.js";
 import { registerMode } from "../core/registry.js";
-import type { CoterieState } from "../core/state.js";
+import { type CoterieState, lastRunByRole } from "../core/state.js";
 import type { ModeBuildOpts } from "../core/types.js";
 import { makeAgentRunner } from "../nodes/agentRunner.js";
 import { makeDebateJudgeNode, makeModeratorNode } from "../nodes/moderator.js";
@@ -36,8 +40,7 @@ counterargument from the prior round (if any). Be concise: 4-8 sentences.`;
 function conPrompt(state: CoterieState): string {
   const total = state.config.debate?.rounds ?? 2;
   const round = (state.mode_state?.rounds_completed ?? 0) + 1;
-  const runs = state.runs ?? [];
-  const lastPro = [...runs].reverse().find((r) => r.role === "pro");
+  const lastPro = lastRunByRole(state.runs, "pro");
   const proArgument = lastPro ? lastPro.stdout.slice(0, 1500) : "(missing)";
   return `You are arguing the CON position in a structured debate.
 

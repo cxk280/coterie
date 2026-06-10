@@ -1,9 +1,7 @@
 /**
- * Pluggable registries for adapters and modes.
- *
- * Mirrors the Python `core/registry.py`. TypeScript doesn't get decorators
- * here — concrete modules call `ADAPTER_REGISTRY.register(...)` at module load
- * time as a side effect.
+ * Pluggable registries for adapters and modes. Concrete modules register
+ * themselves at module load (importing adapters/index.js or modes/index.js
+ * triggers all built-ins); graph.ts and the agent runner resolve by name.
  */
 
 export class AlreadyRegisteredError extends Error {

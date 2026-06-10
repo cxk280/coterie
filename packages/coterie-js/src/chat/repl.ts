@@ -7,9 +7,8 @@ import { createInterface } from "node:readline";
 import kleur from "kleur";
 
 import { gitRepoReady, IsolatedWorktreeExecutor, LocalSubprocessExecutor } from "../core/executor.js";
-import type { LLMClient } from "../core/llm/base.js";
-import { type CoordinationCli, buildLLM, coordinationCliFor } from "../core/llm/build.js";
-import type { AgentRun, Mode } from "../core/state.js";
+import { buildRoleLlms, coordinationCliFor } from "../core/llm/build.js";
+import { type AgentRun, type Mode, initialState, MODES } from "../core/state.js";
 import { validateRuntimeConfig } from "../core/validate.js";
 import { buildGraph } from "../graph.js";
 import { type AgentCfg, defaultConfig } from "./configs.js";
@@ -20,22 +19,10 @@ import { classifyFailure, digestRound } from "./render.js";
 import { rule, Trace } from "./trace.js";
 import { Transcript } from "./transcript.js";
 
-const MODES: Mode[] = ["single", "adversarial", "debate", "tournament", "consensus"];
-
 /** Bare words (no leading slash) that mean "leave the REPL". Without this they'd
  *  be sent to the agents as a task — wasting a real (subscription) round and the
  *  user's time on the most reflexive action there is. */
 const QUIT_WORDS = new Set(["exit", "quit", "q", ":q"]);
-
-async function buildLlms(mode: Mode, cfg: any, cli: CoordinationCli): Promise<Record<string, LLMClient | null>> {
-  return {
-    supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model, cli) : null,
-    judge_llm: ["adversarial", "tournament", "debate"].includes(mode) ? await buildLLM(cfg[mode]?.judge?.model, cli) : null,
-    consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model, cli) : null,
-    moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model, cli) : null,
-    planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model, cli) : null,
-  };
-}
 
 const HELP = `
 Commands:
@@ -270,7 +257,7 @@ async function runTurn(
   // Coordination runs on an available agent's CLI — prefer Claude, else fall back
   // to codex/cursor so a turn works without Claude on the machine.
   const coordCli = coordinationCliFor(agents.map((a) => a.id));
-  const llms = await buildLlms(mode, cfg, coordCli);
+  const llms = await buildRoleLlms(mode, cfg, coordCli);
   // The read-only deliberation executor: inside a git repo it runs in a throwaway
   // worktree (full isolation); outside one we can't make a worktree, so we run the
   // adapter read-only directly in the workdir — still no edits, just no isolation.
@@ -280,21 +267,7 @@ async function runTurn(
   const graph = buildGraph({ workdir, executor: readOnlyExecutor(), config: cfg, ...llms });
 
   const task = transcript.taskFor(text);
-  const initial = {
-    task,
-    mode,
-    plan: [],
-    current_step_idx: 0,
-    runs: [],
-    artifacts: {},
-    status: "planning",
-    config: cfg,
-    spend_usd: 0,
-    route_history: [],
-    judge_history: [],
-    next_agent: null,
-    mode_state: {},
-  };
+  const initial = initialState(task, cfg);
 
   trace.reset();
   if (trace.visible) console.log("\n" + rule(`deliberating · ${mode}`));

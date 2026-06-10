@@ -1,3 +1,7 @@
+/** Mode "adversarial" (the chat default): implementer → auditor → judge, looping
+ *  until the judge accepts or the round cap hits. Node logic lives in
+ *  nodes/auditor.ts; registered into MODE_REGISTRY at import; built by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";

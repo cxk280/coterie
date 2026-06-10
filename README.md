@@ -256,6 +256,9 @@ and prints the result.
 
 ## Develop
 
+Where everything lives and how a turn flows through the code:
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```bash
 cd packages/coterie-js
 npm run build       # tsc → dist/

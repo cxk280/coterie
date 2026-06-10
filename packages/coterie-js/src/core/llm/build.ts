@@ -24,6 +24,23 @@ export function coordinationCliFor(agentIds: string[]): CoordinationCli {
   return "claude";
 }
 
+/** Build the coordination LLM for each seat the mode actually uses (null for the
+ *  rest). Both entry points (`coterie run`, the chat REPL) share this map so the
+ *  seat→LLM wiring can't drift between them. */
+export async function buildRoleLlms(
+  mode: string,
+  cfg: Record<string, any>,
+  cli: CoordinationCli,
+): Promise<Record<string, LLMClient | null>> {
+  return {
+    supervisor_llm: mode === "single" ? await buildLLM(cfg.router?.model, cli) : null,
+    judge_llm: ["adversarial", "tournament", "debate"].includes(mode) ? await buildLLM(cfg[mode]?.judge?.model, cli) : null,
+    consensus_llm: mode === "consensus" ? await buildLLM(cfg.consensus?.engine?.model, cli) : null,
+    moderator_llm: mode === "debate" ? await buildLLM(cfg.debate?.moderator?.model, cli) : null,
+    planner_llm: cfg.planner?.enabled ? await buildLLM(cfg.planner?.model, cli) : null,
+  };
+}
+
 export async function buildLLM(model?: string, cli: CoordinationCli = "claude"): Promise<LLMClient> {
   switch (cli) {
     case "codex":

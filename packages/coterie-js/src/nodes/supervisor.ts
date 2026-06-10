@@ -1,3 +1,7 @@
+/** The single mode's router: picks which agent runs each subtask (LLM strategy,
+ *  with deterministic round-robin when routing is disabled/manual), plus the node
+ *  that advances to the next plan step. Wired into a graph by modes/single.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
