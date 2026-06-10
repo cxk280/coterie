@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { ADAPTER_REGISTRY, MODE_REGISTRY, ClaudeCodeAdapter, VERSION } from "../src/index.js";
 
 describe("coterie smoke", () => {
-  it("exports VERSION 0.1.0", () => {
-    expect(VERSION).toBe("0.1.0");
+  it("exports the package.json version", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    expect(VERSION).toBe(pkg.version);
   });
 
   it("registers built-in adapters", () => {
