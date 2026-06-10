@@ -4,7 +4,7 @@ import type { CLIAdapter } from "../adapters/base.js";
 import type { AdapterExecutor } from "../core/executor.js";
 import { progress } from "../core/progress.js";
 import { ADAPTER_REGISTRY } from "../core/registry.js";
-import type { CoterieState } from "../core/state.js";
+import { type CoterieState, makeRun } from "../core/state.js";
 
 function instantiate(agentCfg: any): CLIAdapter {
   const ctor = ADAPTER_REGISTRY.require(agentCfg.adapter);
@@ -101,17 +101,7 @@ export function makeAgentRunner(opts: AgentRunnerOpts) {
       };
     }
 
-    const run = {
-      agent_id: resolvedId,
-      role: opts.role,
-      prompt,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exit_code: result.exit_code,
-      files_changed: result.files_changed,
-      duration_s: result.duration_s,
-      cost_estimate_usd: result.cost_estimate_usd,
-    };
+    const run = makeRun(resolvedId, opts.role, prompt, result);
     progress.done({ run });
     const update: any = {
       runs: [run],
