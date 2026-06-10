@@ -9,14 +9,13 @@ import { tmpdir } from "node:os";
 
 import { parseNdjson } from "../json.js";
 import { spawnCapture } from "../spawn.js";
-import type { LLMClient, LLMMessage } from "./base.js";
+import { type LLMClient, type LLMMessage, foldPrompt } from "./base.js";
 
 export class CodexCliClient implements LLMClient {
   constructor(public readonly timeoutMs: number = 120_000) {}
 
   async chat(system: string, messages: LLMMessage[], signal?: AbortSignal): Promise<string> {
-    // codex has no separate system-prompt flag — prepend it to the prompt.
-    const prompt = [system, ...messages.map((m) => (m.role === "user" ? m.content : `[${m.role}]\n${m.content}`))].join("\n\n");
+    const prompt = foldPrompt(messages, system); // codex has no system-prompt flag
     const r = await spawnCapture(
       "codex",
       ["exec", "--skip-git-repo-check", "--json", "-s", "read-only", prompt],

@@ -9,13 +9,13 @@ import { tmpdir } from "node:os";
 
 import { parseNdjson } from "../json.js";
 import { spawnCapture } from "../spawn.js";
-import type { LLMClient, LLMMessage } from "./base.js";
+import { type LLMClient, type LLMMessage, foldPrompt } from "./base.js";
 
 export class CursorCliClient implements LLMClient {
   constructor(public readonly timeoutMs: number = 120_000) {}
 
   async chat(system: string, messages: LLMMessage[], signal?: AbortSignal): Promise<string> {
-    const prompt = [system, ...messages.map((m) => (m.role === "user" ? m.content : `[${m.role}]\n${m.content}`))].join("\n\n");
+    const prompt = foldPrompt(messages, system); // cursor-agent has no system-prompt flag
     const r = await spawnCapture(
       "cursor-agent",
       ["-p", prompt, "--output-format", "stream-json", "--force"],

@@ -104,6 +104,16 @@ export function initialState(task: string, config: Record<string, any>): Coterie
   };
 }
 
+/** The most recent run with the given role — e.g. the latest "implementer"
+ *  attempt in a multi-round adversarial loop. */
+export function lastRunByRole(runs: AgentRun[] | undefined, role: string): AgentRun | undefined {
+  const list = runs ?? [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]!.role === role) return list[i];
+  }
+  return undefined;
+}
+
 /** The state-update record for one completed agent subprocess. Shared by the
  *  agent-runner node and the finalizer so the run shape can't drift. */
 export function makeRun(

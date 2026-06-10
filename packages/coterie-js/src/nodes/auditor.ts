@@ -1,6 +1,6 @@
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
-import type { CoterieState } from "../core/state.js";
+import { type CoterieState, lastRunByRole } from "../core/state.js";
 
 export const AUDITOR_PROMPT_TEMPLATE = `You are an adversarial code auditor. The implementer below produced this work for the subtask:
 
@@ -170,8 +170,7 @@ export function adversarialAuditorPrompt(state: CoterieState): string {
 
 export function makeRecordImplementerOutputNode() {
   return async (state: CoterieState) => {
-    const runs = state.runs ?? [];
-    const lastImpl = [...runs].reverse().find((r) => r.role === "implementer");
+    const lastImpl = lastRunByRole(state.runs, "implementer");
     const modeState = { ...(state.mode_state ?? {}) };
     if (lastImpl) modeState.implementer_output = lastImpl.stdout;
     return { mode_state: modeState, status: "auditing" as const };
@@ -180,8 +179,7 @@ export function makeRecordImplementerOutputNode() {
 
 export function makeRecordAuditorFindingsNode() {
   return async (state: CoterieState) => {
-    const runs = state.runs ?? [];
-    const lastAuditor = [...runs].reverse().find((r) => r.role === "auditor");
+    const lastAuditor = lastRunByRole(state.runs, "auditor");
     const modeState = { ...(state.mode_state ?? {}) };
     if (lastAuditor) {
       modeState.auditor_findings = parseFindings(lastAuditor.stdout);
