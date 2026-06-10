@@ -1,5 +1,9 @@
 /** Public API. */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import "./adapters/index.js"; // trigger adapter registration on import
 import "./modes/index.js"; // trigger mode registration on import
 
@@ -36,4 +40,8 @@ export {
 export { buildGraph } from "./graph.js";
 export { loadConfig } from "./config.js";
 
-export const VERSION = "0.1.0";
+// Read from package.json at runtime (same as cli.ts) so it can never drift
+// from the published version (dist/index.js → ../package.json).
+export const VERSION = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version as string;
