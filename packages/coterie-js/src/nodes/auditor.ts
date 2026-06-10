@@ -1,3 +1,8 @@
+/** The adversarial mode's nodes: prompts for the implementer/auditor seats,
+ *  recorder nodes that lift their outputs into mode_state, and the judge that
+ *  sustains/rejects findings and decides accept vs another round.
+ *  Wired into a graph by modes/adversarial.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { type CoterieState, lastRunByRole } from "../core/state.js";

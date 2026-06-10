@@ -1,3 +1,7 @@
+/** The tournament mode's bracket judge: ranks each round's attempts (LLM, with a
+ *  deterministic cheapest-successful fallback), halves the field per round, and
+ *  records the winner. Wired into a graph by modes/tournament.ts. */
+
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";
 

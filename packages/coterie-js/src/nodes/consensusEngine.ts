@@ -1,3 +1,7 @@
+/** The consensus mode's engine: clusters the participants' findings (LLM, with a
+ *  no-merge fallback) and labels each cluster by how many agents agree.
+ *  Wired into a graph by modes/consensus.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import type { CoterieState } from "../core/state.js";

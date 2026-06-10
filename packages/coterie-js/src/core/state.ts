@@ -1,4 +1,6 @@
-/** Coterie's typed state. Mirrors Python's `CoterieState`. */
+/** Coterie's typed graph state: the records every node reads/writes (runs,
+ *  verdicts, findings) plus shared helpers for building them. The LangGraph
+ *  channel/reducer wiring for this shape lives in core/annotation.ts. */
 
 export interface AgentRun {
   agent_id: string;

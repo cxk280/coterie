@@ -1,3 +1,7 @@
+/** Mode "debate": two agents argue pro/con for N rounds; a moderator summarizes
+ *  each round and a judge picks the winner (nodes/moderator.ts). Registered into
+ *  MODE_REGISTRY at import; built per turn by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";

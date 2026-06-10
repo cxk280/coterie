@@ -1,3 +1,7 @@
+/** Adapter for the Claude Code CLI (`claude -p`), run on the user's Claude
+ *  subscription. Builds the argv, parses the stream-json NDJSON output, and
+ *  surfaces tool calls as live progress. Registered at import (adapters/index). */
+
 import { CLIAdapter, type AdapterResult } from "./base.js";
 import { parseJsonLoose, parseNdjson } from "../core/json.js";
 import { toolHint } from "./stream.js";

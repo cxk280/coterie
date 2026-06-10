@@ -1,3 +1,7 @@
+/** Mode "tournament": N agents attempt the task in parallel; a bracket judge
+ *  (nodes/bracket.ts) ranks and eliminates per round until one winner remains.
+ *  Registered into MODE_REGISTRY at import; built per turn by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import type { AdapterExecutor } from "../core/executor.js";

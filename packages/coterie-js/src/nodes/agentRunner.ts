@@ -1,4 +1,6 @@
-/** Generic CLI-invoking node + budget gate. Mirrors Python `nodes/agent_runner.py`. */
+/** The one node that actually runs an agent CLI: resolves the adapter, builds
+ *  the prompt, executes via the mode's executor, and records the run (plus a
+ *  budget gate). Every mode's agent seats are instances of this. */
 
 import type { CLIAdapter } from "../adapters/base.js";
 import type { AdapterExecutor } from "../core/executor.js";

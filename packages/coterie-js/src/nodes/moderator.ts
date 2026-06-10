@@ -1,3 +1,7 @@
+/** The debate mode's coordination nodes: a moderator that summarizes each pro/con
+ *  round, and a judge that scores the full transcript and picks the winner.
+ *  Wired into a graph by modes/debate.ts. */
+
 import { parseJsonLoose } from "../core/json.js";
 import type { LLMClient } from "../core/llm/base.js";
 import { type CoterieState, lastRunByRole } from "../core/state.js";

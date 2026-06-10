@@ -1,6 +1,7 @@
 /**
- * LangGraph state annotation. The reducer-bearing channels here mirror the
- * `Annotated[..., add]` Python TypedDict fields.
+ * LangGraph channel wiring for CoterieState (core/state.ts): append-reducers for
+ * the history fields (runs, route/judge history, spend), last-write-wins for the
+ * rest. Every mode's StateGraph is built over this annotation.
  */
 
 import { Annotation } from "@langchain/langgraph";

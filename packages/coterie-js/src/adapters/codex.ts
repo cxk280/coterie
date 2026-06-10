@@ -1,3 +1,7 @@
+/** Adapter for OpenAI's Codex CLI (`codex exec`), run on a ChatGPT subscription.
+ *  Builds the argv, parses the JSONL output, and surfaces commands/edits as live
+ *  progress. Registered at import (adapters/index). */
+
 import { CLIAdapter, type AdapterResult } from "./base.js";
 import { parseJsonLoose, parseNdjson } from "../core/json.js";
 import { registerAdapter } from "../core/registry.js";

@@ -1,3 +1,6 @@
+/** Mode "single": plan → a supervisor routes each subtask to one agent → repeat.
+ *  Registered into MODE_REGISTRY at import; built per turn by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";

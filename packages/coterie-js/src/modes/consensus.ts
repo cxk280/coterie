@@ -1,3 +1,7 @@
+/** Mode "consensus": every agent reviews the task independently in parallel; an
+ *  engine (nodes/consensusEngine.ts) clusters their findings and scores agreement.
+ *  Registered into MODE_REGISTRY at import; built per turn by graph.ts. */
+
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { CoterieStateAnnotation } from "../core/annotation.js";
